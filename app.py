@@ -159,3 +159,48 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                                 "CLAUSE CODE": row[3]
                             }
                             for row in table[1:] if len(row) >= 4
+                        ])
+            return pd.DataFrame()
+
+        def extract_corrective_action():
+            return pd.DataFrame([{
+                "ID NO. SEC A": id_sec_a,
+                "CAR NO.": car_id,
+                "ID NO. SEC E": "1",
+                "CORRECTION ACTION": car_desc,
+                "PIC": "Safety Officer",
+                "IMPLEMENTATION DATE": car_date
+            }])
+
+        def extract_conclusion_review():
+            return pd.DataFrame([{
+                "ID NO. SEC A": id_sec_a,
+                "CAR NO.": car_id,
+                "Accepted": "Yes",
+                "Rejected": ""
+            }])
+
+        df_a = extract_section_a()
+        df_b1 = extract_findings()
+        df_b2 = extract_cost_impact()
+        df_c2 = extract_why_answers(extract_section_c_text())
+        df_d = extract_corrections()
+        df_e1 = extract_corrective_action()
+        df_e2 = extract_conclusion_review()
+
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        df_a.to_excel(writer, sheet_name="Section A", index=False)
+        df_b1.to_excel(writer, sheet_name="Section B1  Chronology Findings", index=False)
+        df_b2.to_excel(writer, sheet_name="Section B2 Cost Impacted", index=False)
+        df_c2.to_excel(writer, sheet_name="Section C 5Why QA", index=False)
+        df_d.to_excel(writer, sheet_name="Section D Corrective Taken", index=False)
+        df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action Ta", index=False)
+        df_e2.to_excel(writer, sheet_name="SECTION E2 Conclusion and Revie", index=False)
+
+    return output_path
+
+# ✅ Run app for both Render and local dev
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
+
