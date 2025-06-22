@@ -1,4 +1,3 @@
-
 from flask import Flask, request, jsonify, render_template
 import os
 import pdfplumber
@@ -198,10 +197,10 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
 
     return output_path
 
-# For Render.com
+# ✅ Works for both Render and Local
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=True)
 
 
 # === Run Flask ===
