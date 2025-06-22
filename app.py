@@ -1,177 +1,161 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Upload CAR</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #f5f7fa;
-      padding: 2rem;
-      display: flex;
-      justify-content: center;
-    }
+from flask import Flask, request, jsonify, render_template
+import os
+import pdfplumber
+import pandas as pd
+import re
+from werkzeug.utils import secure_filename
+from datetime import datetime
 
-    .form-container {
-      background-color: white;
-      padding: 2rem;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
-      width: 100%;
-      max-width: 500px;
-    }
+app = Flask(__name__)
 
-    h2 {
-      margin-bottom: 1.5rem;
-      font-size: 1.5rem;
-    }
+# Folder setup
+UPLOAD_FOLDER = "uploads"
+OUTPUT_FOLDER = "outputs"
+STATIC_FOLDER = "static"
 
-    label {
-      display: block;
-      margin-top: 1rem;
-      margin-bottom: 0.5rem;
-      font-weight: 600;
-    }
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+os.makedirs(STATIC_FOLDER, exist_ok=True)
 
-    input[type="text"],
-    input[type="date"],
-    textarea {
-      width: 100%;
-      padding: 0.75rem;
-      border: 1px solid #ccc;
-      border-radius: 5px;
-      font-size: 1rem;
-    }
+@app.route("/")
+def index():
+    return render_template("upload.html")
 
-    textarea {
-      resize: vertical;
-      min-height: 80px;
-    }
+@app.route("/analyze", methods=["POST"])
+def analyze():
+    try:
+        file = request.files.get("file")
+        car_id = request.form.get("carId", "CAR-UNKNOWN")
+        car_date = request.form.get("date", "2024-01-01")
+        car_desc = request.form.get("description", "")
 
-    .file-upload {
-      margin-top: 1.5rem;
-      border: 2px dashed #ccc;
-      padding: 2rem;
-      text-align: center;
-      border-radius: 8px;
-    }
+        if not file:
+            return jsonify({"error": "No file uploaded"}), 400
 
-    .file-upload input[type="file"] {
-      margin-top: 1rem;
-    }
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(file_path)
 
-    .button-row {
-      display: flex;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 1rem;
-      margin-top: 2rem;
-    }
+        # Process PDF
+        output_path = process_pdf(file_path, car_id, car_date, car_desc)
 
-    .button-row button,
-    .button-row a {
-      padding: 0.75rem 1.5rem;
-      font-size: 1rem;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      text-decoration: none;
-      text-align: center;
-    }
+        # Move output to static for downloading
+        final_filename = f"{car_id}_output.xlsx"
+        static_path = os.path.join(STATIC_FOLDER, final_filename)
+        os.replace(output_path, static_path)
 
-    .submit-btn {
-      background-color: #2563eb;
-      color: white;
-    }
+        return jsonify({
+            "result": "✅ Excel generated successfully.",
+            "download_url": f"/static/{final_filename}"
+        })
 
-    .cancel-btn {
-      background-color: #e5e7eb;
-      color: black;
-    }
+    except Exception as e:
+        print("Server Error:", e)
+        return jsonify({"error": f"❌ Server error: {str(e)}"}), 500
 
-    .home-btn {
-      background-color: #10b981;
-      color: white;
-    }
+def process_pdf(pdf_path, car_id, car_date, car_desc):
+    id_sec_a = "300525-0001"
+    output_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.xlsx")
 
-    #report {
-      margin-top: 2rem;
-      white-space: pre-wrap;
-      background: #f1f5f9;
-      padding: 1rem;
-      border-radius: 6px;
-      display: none;
-    }
-  </style>
-</head>
-<body>
-  <div class="form-container">
-    <h2>Upload CAR</h2>
-    <form id="uploadForm" method="POST" enctype="multipart/form-data" action="/analyze">
-      <label for="car-id">CAR ID</label>
-      <input type="text" id="car-id" name="carId" placeholder="Enter CAR ID" required />
+    with pdfplumber.open(pdf_path) as pdf:
+        tables = pdf.pages[0].extract_tables()
 
-      <label for="car-date">Date</label>
-      <input type="date" id="car-date" name="date" required />
+        def extract_section_a():
+            details = {}
+            for table in tables:
+                flat = [cell for row in table for cell in row if cell]
+                if "CAR No" in flat and "Issue Date" in flat:
+                    for row in table:
+                        row = [cell if cell else "" for cell in row]
+                        if row[0] == "CAR No":
+                            details["CAR NO."] = row[1]
+                            details["ISSUE DATE"] = row[4]
+                        elif row[0] == "Reporter":
+                            details["REPORTER"] = row[1]
+                            details["DEPARTMENT"] = row[4]
+                        elif row[0] == "Client":
+                            details["CLIENT "] = row[1]
+                            details["LOCATION"] = row[4]
+                        elif row[0] == "Well No.":
+                            details["WELL NO."] = row[1]
+                            details["PROJECT"] = row[4]
+            details["ID NO. SEC A"] = id_sec_a
+            return pd.DataFrame([details])
 
-      <label for="car-desc">Description</label>
-      <textarea id="car-desc" name="description" placeholder="Details of the corrective action..." required></textarea>
+        def extract_findings():
+            for page in pdf.pages:
+                text = page.extract_text() or ""
+                if "SECTION B" in text.upper():
+                    tables = page.extract_tables()
+                    for table in tables:
+                        if "Chronology of Findings" in " ".join([cell or "" for row in table for cell in row]):
+                            return pd.DataFrame([
+                                {
+                                    "ID NO. SEC A": id_sec_a,
+                                    "CAR NO.": car_id,
+                                    "ID NO. SEC B": "1",
+                                    "DATE": row[1],
+                                    "TIME": row[2],
+                                    "DETAILS": row[3]
+                                }
+                                for row in table[1:] if len(row) >= 4
+                            ])
+            return pd.DataFrame()
 
-      <div class="file-upload">
-        <div>📄</div>
-        <p>Drag and drop a file here or click the button to upload</p>
-        <input type="file" id="car-file" name="file" required />
-      </div>
+        def extract_cost_impact():
+            return pd.DataFrame([{
+                "ID NO. SEC A": id_sec_a,
+                "CAR NO.": car_id,
+                "ID NO. SEC B": "1",
+                "COST IMPACTED BREAKDOWN ": "Equipment Delay",
+                "COST(MYR)": "15000"
+            }])
 
-      <div class="button-row">
-        <button type="submit" class="submit-btn">Submit</button>
-        <button type="reset" class="cancel-btn">Cancel</button>
-        <a href="safesightai.html" class="home-btn">Back to Home</a>
-      </div>
-    </form>
+        def extract_section_c_text():
+            section_c_text = ""
+            in_section = False
+            for page in pdf.pages:
+                text = page.extract_text() or ""
+                for line in text.splitlines():
+                    if "SECTION C" in line.upper():
+                        in_section = True
+                    elif "SECTION D" in line.upper():
+                        in_section = False
+                    if in_section:
+                        section_c_text += line + "\n"
+            return section_c_text.strip()
 
-    <div id="report"></div>
-  </div>
+        def extract_why_answers(text):
+            blocks = re.split(r"Causal Factor[#\s]*\d+:\s*", text)[1:]
+            titles = re.findall(r"Causal Factor[#\s]*\d+:\s*(.*)", text)
+            results = []
+            for i, block in enumerate(blocks):
+                pairs = re.findall(r"(Why\d.*?)\s*[-–]\s*(.*?)(?=Why\d|Causal Factor|$)", block, re.DOTALL)
+                for why, answer in pairs:
+                    bullets = re.findall(r"•\s*(.*?)\s*(?=•|$)", answer) or [answer.strip()]
+                    for b in bullets:
+                        results.append({
+                            "ID NO. SEC A": id_sec_a,
+                            "CAR NO.": car_id,
+                            "ID NO. SEC C": "1",
+                            "CAUSAL FACTOR": titles[i].strip() if i < len(titles) else "",
+                            "WHY": why.strip(),
+                            "ANSWER": b.strip()
+                        })
+            return pd.DataFrame(results)
 
-  <!-- ✅ Upload Logic -->
-  <script>
-    const form = document.getElementById("uploadForm");
-    const reportDiv = document.getElementById("report");
-
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-
-      reportDiv.style.display = "block";
-      reportDiv.textContent = "Analyzing with AI... Please wait.";
-
-      const formData = new FormData(form);
-
-      try {
-        const response = await fetch("/analyze", {
-          method: "POST",
-          body: formData
-        });
-
-        const text = await response.text();
-
-        try {
-          const json = JSON.parse(text);
-          if (json.download_url) {
-            reportDiv.innerHTML = `✅ Success! <a href="${json.download_url}" target="_blank">Download Excel</a>`;
-          } else {
-            reportDiv.textContent = "❌ Error: " + (json.error || "Unknown error.");
-          }
-        } catch {
-          reportDiv.textContent = "⚠️ Unexpected response:\n" + text;
-        }
-
-      } catch (err) {
-        reportDiv.textContent = "❌ Network error: " + err.message;
-      }
-    });
-  </script>
-</body>
-</html>
-
-
+        def extract_corrections():
+            for page in pdf.pages:
+                if "Section D" in (page.extract_text() or ""):
+                    for table in page.extract_tables():
+                        return pd.DataFrame([
+                            {
+                                "ID NO. SEC A": id_sec_a,
+                                "CAR NO.": car_id,
+                                "ID NO. SEC D": "1",
+                                "CORRECTION TAKEN": row[0],
+                                "PIC": row[1],
+                                "IMPLEMENTATION DATE": row[2],
+                                "CLAUSE CODE": row[3]
+                            }
+                            for row in table[1:] if len(row) >= 4
