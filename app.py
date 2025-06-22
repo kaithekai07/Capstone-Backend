@@ -1,4 +1,3 @@
-pip install flask pandas pdfplumber openpyxl
 
 from flask import Flask, request, jsonify, render_template
 import os
