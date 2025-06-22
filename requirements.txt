@@ -2,6 +2,3 @@ Flask
 pdfplumber
 pandas
 openpyxl
-git add requirements.txt
-git commit -m "Add requirements.txt for Render"
-git push origin main  # or 'master' or your branch name
