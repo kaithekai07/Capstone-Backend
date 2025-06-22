@@ -197,12 +197,8 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
 
     return output_path
 
-# ✅ Works for both Render and Local
+# ✅ Correct single run block (Render & local compatible)
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
 
-
-# === Run Flask ===
-if __name__ == "__main__":
-    app.run(debug=True)
