@@ -5,21 +5,22 @@ import os
 import pdfplumber
 import pandas as pd
 import re
+from werkzeug.utils import secure_filename
+from datetime import datetime
 
 app = Flask(__name__)
-
-# === Folder setup ===
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
+STATIC_FOLDER = "static"
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+os.makedirs(STATIC_FOLDER, exist_ok=True)
 
-# === Route to serve the HTML form ===
 @app.route("/")
 def index():
-    return render_template("upload.html")  # Make sure upload.html is in /templates/
+    return render_template("upload.html")
 
-# === Route to handle file upload and PDF extraction ===
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
@@ -31,18 +32,27 @@ def analyze():
         if not file:
             return jsonify({"error": "No file uploaded"}), 400
 
-        filename = file.filename
+        filename = secure_filename(file.filename)
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
 
-        output_file = process_pdf(file_path, car_id, car_date, car_desc)
-        return jsonify({"result": f"✅ Excel file saved at: {output_file}"})
+        # Process PDF and get Excel path
+        output_path = process_pdf(file_path, car_id, car_date, car_desc)
+
+        # Move to static so Render can serve it
+        final_filename = f"{car_id}_output.xlsx"
+        static_path = os.path.join(STATIC_FOLDER, final_filename)
+        os.replace(output_path, static_path)
+
+        return jsonify({
+            "result": "✅ Excel generated successfully.",
+            "download_url": f"/static/{final_filename}"
+        })
 
     except Exception as e:
         print("Server Error:", e)
         return jsonify({"error": f"❌ Server error: {str(e)}"}), 500
 
-# === PDF Extraction Logic ===
 def process_pdf(pdf_path, car_id, car_date, car_desc):
     id_sec_a = "300525-0001"
     output_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.xlsx")
@@ -50,7 +60,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
     with pdfplumber.open(pdf_path) as pdf:
         tables = pdf.pages[0].extract_tables()
 
-        # SECTION A
         def extract_section_a():
             details = {}
             for table in tables:
@@ -73,7 +82,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
             details["ID NO. SEC A"] = id_sec_a
             return pd.DataFrame([details])
 
-        # SECTION B1
         def extract_findings():
             for page in pdf.pages:
                 text = page.extract_text() or ""
@@ -94,7 +102,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                             ])
             return pd.DataFrame()
 
-        # SECTION B2
         def extract_cost_impact():
             return pd.DataFrame([{
                 "ID NO. SEC A": id_sec_a,
@@ -104,20 +111,19 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                 "COST(MYR)": "15000"
             }])
 
-        # SECTION C
         def extract_section_c_text():
-            text = ""
+            section_c_text = ""
             in_section = False
             for page in pdf.pages:
-                page_text = page.extract_text() or ""
-                for line in page_text.splitlines():
+                text = page.extract_text() or ""
+                for line in text.splitlines():
                     if "SECTION C" in line.upper():
                         in_section = True
                     elif "SECTION D" in line.upper():
                         in_section = False
                     if in_section:
-                        text += line + "\n"
-            return text.strip()
+                        section_c_text += line + "\n"
+            return section_c_text.strip()
 
         def extract_why_answers(text):
             blocks = re.split(r"Causal Factor[#\s]*\d+:\s*", text)[1:]
@@ -138,7 +144,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                         })
             return pd.DataFrame(results)
 
-        # SECTION D
         def extract_corrections():
             for page in pdf.pages:
                 if "Section D" in (page.extract_text() or ""):
@@ -157,7 +162,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                         ])
             return pd.DataFrame()
 
-        # SECTION E1
         def extract_corrective_action():
             return pd.DataFrame([{
                 "ID NO. SEC A": id_sec_a,
@@ -168,7 +172,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                 "IMPLEMENTATION DATE": car_date
             }])
 
-        # SECTION E2
         def extract_conclusion_review():
             return pd.DataFrame([{
                 "ID NO. SEC A": id_sec_a,
@@ -177,7 +180,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                 "Rejected": ""
             }])
 
-        # Run all
         df_a = extract_section_a()
         df_b1 = extract_findings()
         df_b2 = extract_cost_impact()
@@ -186,7 +188,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
         df_e1 = extract_corrective_action()
         df_e2 = extract_conclusion_review()
 
-    # Write to Excel
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df_a.to_excel(writer, sheet_name="Section A", index=False)
         df_b1.to_excel(writer, sheet_name="Section B1  Chronology Findings", index=False)
@@ -197,6 +198,12 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
         df_e2.to_excel(writer, sheet_name="SECTION E2 Conclusion and Revie", index=False)
 
     return output_path
+
+# For Render.com
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
 
 # === Run Flask ===
 if __name__ == "__main__":
