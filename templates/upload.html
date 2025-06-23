@@ -1,1 +1,178 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Upload CAR</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f5f7fa;
+      padding: 2rem;
+      display: flex;
+      justify-content: center;
+    }
+
+    .form-container {
+      background-color: white;
+      padding: 2rem;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      width: 100%;
+      max-width: 500px;
+    }
+
+    h2 {
+      margin-bottom: 1.5rem;
+      font-size: 1.5rem;
+    }
+
+    label {
+      display: block;
+      margin-top: 1rem;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+    }
+
+    input[type="text"],
+    input[type="date"],
+    textarea {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 1rem;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    .file-upload {
+      margin-top: 1.5rem;
+      border: 2px dashed #ccc;
+      padding: 2rem;
+      text-align: center;
+      border-radius: 8px;
+    }
+
+    .file-upload input[type="file"] {
+      margin-top: 1rem;
+    }
+
+    .button-row {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    .button-row button,
+    .button-row a {
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      text-decoration: none;
+      text-align: center;
+    }
+
+    .submit-btn {
+      background-color: #2563eb;
+      color: white;
+    }
+
+    .cancel-btn {
+      background-color: #e5e7eb;
+      color: black;
+    }
+
+    .home-btn {
+      background-color: #10b981;
+      color: white;
+    }
+
+    #report {
+      margin-top: 2rem;
+      white-space: pre-wrap;
+      background: #f1f5f9;
+      padding: 1rem;
+      border-radius: 6px;
+      display: none;
+    }
+
+    #report a {
+      color: #2563eb;
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="form-container">
+    <h2>Upload CAR</h2>
+    <form id="uploadForm" method="POST" enctype="multipart/form-data" action="/analyze">
+      <label for="car-id">CAR ID</label>
+      <input type="text" id="car-id" name="carId" placeholder="Enter CAR ID" required />
+
+      <label for="car-date">Date</label>
+      <input type="date" id="car-date" name="date" required />
+
+      <label for="car-desc">Description</label>
+      <textarea id="car-desc" name="description" placeholder="Details of the corrective action..." required></textarea>
+
+      <div class="file-upload">
+        <div>📄</div>
+        <p>Drag and drop a file here or click the button to upload</p>
+        <input type="file" id="car-file" name="file" accept=".pdf" required />
+      </div>
+
+      <div class="button-row">
+        <button type="submit" class="submit-btn">Submit</button>
+        <button type="reset" class="cancel-btn">Cancel</button>
+        <a href="safesightai.html" class="home-btn">Back to Home</a>
+      </div>
+    </form>
+
+    <div id="report"></div>
+  </div>
+
+  <script>
+    const form = document.getElementById("uploadForm");
+    const reportDiv = document.getElementById("report");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      reportDiv.style.display = "block";
+      reportDiv.textContent = "🔄 Uploading and analyzing...";
+
+      const formData = new FormData(form);
+
+      try {
+        const response = await fetch("/analyze", {
+          method: "POST",
+          body: formData
+        });
+
+        const text = await response.text();
+
+        try {
+          const json = JSON.parse(text);
+          if (json.download_url) {
+            reportDiv.innerHTML = `✅ Success! <a href="${json.download_url}" target="_blank">Download Excel</a>`;
+          } else {
+            reportDiv.textContent = "❌ " + (json.error || "Unknown server error.");
+          }
+        } catch (err) {
+          reportDiv.textContent = "⚠️ Unexpected response:\n" + text;
+        }
+      } catch (err) {
+        reportDiv.textContent = "❌ Network error: " + err.message;
+      }
+    });
+  </script>
+</body>
+</html>
