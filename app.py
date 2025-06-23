@@ -3,6 +3,7 @@ import os
 import pdfplumber
 import pandas as pd
 import re
+import traceback
 from werkzeug.utils import secure_filename
 from datetime import datetime
 
@@ -17,9 +18,14 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 os.makedirs(STATIC_FOLDER, exist_ok=True)
 
+# --- Routes ---
 @app.route("/")
 def index():
     return render_template("upload.html")
+
+@app.route("/health")
+def health():
+    return "OK", 200
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
@@ -36,13 +42,15 @@ def analyze():
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
 
-        # Process PDF
         output_path = process_pdf(file_path, car_id, car_date, car_desc)
 
-        # Move output to static for downloading
+        # Move to static for download
         final_filename = f"{car_id}_output.xlsx"
         static_path = os.path.join(STATIC_FOLDER, final_filename)
         os.replace(output_path, static_path)
+
+        # Optionally delete uploaded file
+        os.remove(file_path)
 
         return jsonify({
             "result": "✅ Excel generated successfully.",
@@ -50,9 +58,10 @@ def analyze():
         })
 
     except Exception as e:
-        print("Server Error:", e)
+        traceback.print_exc()
         return jsonify({"error": f"❌ Server error: {str(e)}"}), 500
 
+# --- PDF Processing Logic ---
 def process_pdf(pdf_path, car_id, car_date, car_desc):
     id_sec_a = "300525-0001"
     output_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.xlsx")
@@ -180,6 +189,7 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                 "Rejected": ""
             }])
 
+        # Collect all extracted DataFrames
         df_a = extract_section_a()
         df_b1 = extract_findings()
         df_b2 = extract_cost_impact()
@@ -188,6 +198,7 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
         df_e1 = extract_corrective_action()
         df_e2 = extract_conclusion_review()
 
+    # Write to Excel
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df_a.to_excel(writer, sheet_name="Section A", index=False)
         df_b1.to_excel(writer, sheet_name="Section B1  Chronology Findings", index=False)
@@ -199,8 +210,7 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
 
     return output_path
 
-# ✅ Run app for both Render and local dev
+# --- Run App ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
-
