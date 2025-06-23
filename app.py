@@ -16,8 +16,8 @@ STATIC_FOLDER = "static"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-if not os.path.isdir(STATIC_FOLDER):
-    os.makedirs(STATIC_FOLDER)
+os.makedirs(STATIC_FOLDER, exist_ok=True)
+
 
 
 # --- Routes ---
