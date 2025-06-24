@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, url_for
 import os
 import pdfplumber
 import pandas as pd
@@ -7,7 +7,8 @@ import traceback
 from werkzeug.utils import secure_filename
 from datetime import datetime
 
-app = Flask(__name__)
+# Configure Flask
+app = Flask(__name__, static_folder="static", static_url_path="/static")
 
 # Folder setup
 UPLOAD_FOLDER = "uploads"
@@ -17,8 +18,6 @@ STATIC_FOLDER = "static"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 os.makedirs(STATIC_FOLDER, exist_ok=True)
-
-
 
 # --- Routes ---
 @app.route("/")
@@ -46,7 +45,7 @@ def analyze():
 
         output_path = process_pdf(file_path, car_id, car_date, car_desc)
 
-        # Move to static for download
+        # Move result to static folder for downloading
         final_filename = f"{car_id}_output.xlsx"
         static_path = os.path.join(STATIC_FOLDER, final_filename)
         os.replace(output_path, static_path)
@@ -54,9 +53,10 @@ def analyze():
         # Optionally delete uploaded file
         os.remove(file_path)
 
+        # Return download URL
         return jsonify({
             "result": "✅ Excel generated successfully.",
-            "download_url": f"/static/{final_filename}"
+            "download_url": url_for('static', filename=final_filename)
         })
 
     except Exception as e:
@@ -216,3 +216,5 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
+
+
