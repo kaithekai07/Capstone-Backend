@@ -1,9 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="referrer" content="no-referrer">
   <title>Upload CAR</title>
   <style>
     body {
@@ -114,7 +114,7 @@
 <body>
   <div class="form-container">
     <h2>Upload CAR</h2>
-    <form id="uploadForm" method="POST" enctype="multipart/form-data" action="/analyze">
+    <form id="uploadForm" method="POST" enctype="multipart/form-data" action="{{ url_for('analyze') }}">
       <label for="car-id">CAR ID</label>
       <input type="text" id="car-id" name="carId" placeholder="Enter CAR ID" required />
 
@@ -152,7 +152,7 @@
       const formData = new FormData(form);
 
       try {
-        const response = await fetch("/analyze", {
+        const response = await fetch(form.action, {
           method: "POST",
           body: formData
         });
@@ -166,9 +166,10 @@
           } else {
             reportDiv.textContent = "❌ " + (json.error || "Unknown server error.");
           }
-        } catch (err) {
+        } catch {
           reportDiv.textContent = "⚠️ Unexpected response:\n" + text;
         }
+
       } catch (err) {
         reportDiv.textContent = "❌ Network error: " + err.message;
       }
