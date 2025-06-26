@@ -17,7 +17,6 @@ STATIC_FOLDER = "static"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-os.makedirs(STATIC_FOLDER, exist_ok=True)
 
 # --- Routes ---
 @app.route("/")
