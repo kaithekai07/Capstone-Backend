@@ -13,20 +13,14 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-
-
-# Configure Flask
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 
-# Folder setup
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
 STATIC_FOLDER = "static"
-
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-# --- Routes ---
 @app.route("/")
 def index():
     return render_template("upload.html")
@@ -52,28 +46,22 @@ def analyze():
 
         output_path = process_pdf(file_path, car_id, car_date, car_desc)
 
-        # Example record — update to match your Supabase table schema
-supabase_data = {
-    "car_id": car_id,
-    "description": car_desc,
-    "date": car_date,
-    "filename": filename,
-    "submitted_at": datetime.utcnow().isoformat()
-}
+        # Upload metadata to Supabase
+        supabase_data = {
+            "car_id": car_id,
+            "description": car_desc,
+            "date": car_date,
+            "filename": filename,
+            "submitted_at": datetime.utcnow().isoformat()
+        }
+        supabase.table("car_reports").insert(supabase_data).execute()
 
-# Insert into Supabase table called "car_reports"
-response = supabase.table("car_reports").insert(supabase_data).execute()
-print("🔁 Supabase insert response:", response)
-
-        # Move result to static folder for downloading
+        # Move result to static folder
         final_filename = f"{car_id}_output.xlsx"
         static_path = os.path.join(STATIC_FOLDER, final_filename)
         os.replace(output_path, static_path)
-
-        # Optionally delete uploaded file
         os.remove(file_path)
 
-        # Return download URL
         return jsonify({
             "result": "✅ Excel generated successfully.",
             "download_url": url_for('static', filename=final_filename)
@@ -83,7 +71,6 @@ print("🔁 Supabase insert response:", response)
         traceback.print_exc()
         return jsonify({"error": f"❌ Server error: {str(e)}"}), 500
 
-# --- PDF Processing Logic ---
 def process_pdf(pdf_path, car_id, car_date, car_desc):
     id_sec_a = "300525-0001"
     output_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.xlsx")
@@ -211,7 +198,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                 "Rejected": ""
             }])
 
-        # Collect all extracted DataFrames
         df_a = extract_section_a()
         df_b1 = extract_findings()
         df_b2 = extract_cost_impact()
@@ -220,7 +206,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
         df_e1 = extract_corrective_action()
         df_e2 = extract_conclusion_review()
 
-    # Write to Excel
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df_a.to_excel(writer, sheet_name="Section A", index=False)
         df_b1.to_excel(writer, sheet_name="Section B1  Chronology Findings", index=False)
@@ -232,9 +217,7 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
 
     return output_path
 
-# --- Run App ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port, debug=True)
-
 
