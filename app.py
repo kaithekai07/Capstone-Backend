@@ -6,6 +6,12 @@ import re
 import traceback
 from werkzeug.utils import secure_filename
 from datetime import datetime
+from supabase import create_client, Client
+
+SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 
@@ -45,6 +51,19 @@ def analyze():
         file.save(file_path)
 
         output_path = process_pdf(file_path, car_id, car_date, car_desc)
+
+        # Example record — update to match your Supabase table schema
+supabase_data = {
+    "car_id": car_id,
+    "description": car_desc,
+    "date": car_date,
+    "filename": filename,
+    "submitted_at": datetime.utcnow().isoformat()
+}
+
+# Insert into Supabase table called "car_reports"
+response = supabase.table("car_reports").insert(supabase_data).execute()
+print("🔁 Supabase insert response:", response)
 
         # Move result to static folder for downloading
         final_filename = f"{car_id}_output.xlsx"
