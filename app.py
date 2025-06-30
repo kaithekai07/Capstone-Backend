@@ -216,7 +216,7 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
 
 # --- Run App ---
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5009))
+    port = int(os.environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port, debug=True)
 
 
