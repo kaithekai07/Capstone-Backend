@@ -6,8 +6,7 @@ import re
 import traceback
 from werkzeug.utils import secure_filename
 from datetime import datetime
-from flask_cors import CORS
-CORS(app)
+
 
 
 # Configure Flask
