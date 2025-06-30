@@ -6,6 +6,9 @@ import re
 import traceback
 from werkzeug.utils import secure_filename
 from datetime import datetime
+from flask_cors import CORS
+CORS(app)
+
 
 # Configure Flask
 app = Flask(__name__, static_folder="static", static_url_path="/static")
