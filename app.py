@@ -7,10 +7,13 @@ import traceback
 from werkzeug.utils import secure_filename
 from datetime import datetime
 from supabase import create_client, Client
-from flask_cors import CORS
+from flask import Flask, request, jsonify, render_template, url_for
+from flask_cors import CORS  # <-- new line
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
-CORS(app) 
+CORS(app, origins=["https://safesightai.vercel.app"])  # <-- new line
+
+
 SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
 
