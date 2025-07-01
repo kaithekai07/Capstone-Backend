@@ -11,7 +11,8 @@ from flask import Flask, request, jsonify, render_template, url_for
 from flask_cors import CORS
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/*": {"origins": "https://safesightai.vercel.app"}})
+
 
 
 SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
