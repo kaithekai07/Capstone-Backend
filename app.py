@@ -8,10 +8,10 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 from supabase import create_client, Client
 from flask import Flask, request, jsonify, render_template, url_for
-from flask_cors import CORS  # <-- new line
+from flask_cors import CORS
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
-CORS(app, origins=["https://safesightai.vercel.app"])  # <-- new line
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 
 SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
