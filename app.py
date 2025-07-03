@@ -78,40 +78,34 @@ def analyze():
         return jsonify({"error": f"❌ Server error: {str(e)}"}), 500
 
 def process_pdf(pdf_path, car_id, car_date, car_desc):
-    id_sec_a = "300525-0001"
+df_a, id_sec_a = extract_section_a()
     output_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.xlsx")
-    print("📄 Extracting Section A")
-df_a = extract_section_a()
-print("📄 Extracting Findings")
-df_b1 = extract_findings()
-
-if not os.path.exists(output_path):
-    return jsonify({"error": "Failed to generate Excel file."}), 500
 
     with pdfplumber.open(pdf_path) as pdf:
         tables = pdf.pages[0].extract_tables()
 
-        def extract_section_a():
-            details = {}
-            for table in tables:
-                flat = [cell for row in table for cell in row if cell]
-                if "CAR No" in flat and "Issue Date" in flat:
-                    for row in table:
-                        row = [cell if cell else "" for cell in row]
-                        if row[0] == "CAR No":
-                            details["CAR NO."] = row[1]
-                            details["ISSUE DATE"] = row[4]
-                        elif row[0] == "Reporter":
-                            details["REPORTER"] = row[1]
-                            details["DEPARTMENT"] = row[4]
-                        elif row[0] == "Client":
-                            details["CLIENT "] = row[1]
-                            details["LOCATION"] = row[4]
-                        elif row[0] == "Well No.":
-                            details["WELL NO."] = row[1]
-                            details["PROJECT"] = row[4]
-            details["ID NO. SEC A"] = id_sec_a
-            return pd.DataFrame([details])
+def extract_section_a():
+    details = {}
+    for table in tables:
+        flat = [cell for row in table for cell in row if cell]
+        if "CAR No" in flat and "Issue Date" in flat:
+            for row in table:
+                row = [cell if cell else "" for cell in row]
+                if row[0] == "CAR No":
+                    details["CAR NO."] = row[1]
+                    details["ISSUE DATE"] = row[4]
+                elif row[0] == "Reporter":
+                    details["REPORTER"] = row[1]
+                    details["DEPARTMENT"] = row[4]
+                elif row[0] == "Client":
+                    details["CLIENT "] = row[1]
+                    details["LOCATION"] = row[4]
+                elif row[0] == "Well No.":
+                    details["WELL NO."] = row[1]
+                    details["PROJECT"] = row[4]
+    details["ID NO. SEC A"] = details.get("CAR NO.", "UNKNOWN")
+    return pd.DataFrame([details]), details.get("CAR NO.", "UNKNOWN")
+
 
         def extract_findings():
             for page in pdf.pages:
@@ -211,7 +205,9 @@ if not os.path.exists(output_path):
                 "Rejected": ""
             }])
 
+        print("📄 Extracting Section A")
         df_a = extract_section_a()
+        print("📄 Extracting Findings")
         df_b1 = extract_findings()
         df_b2 = extract_cost_impact()
         df_c2 = extract_why_answers(extract_section_c_text())
@@ -219,6 +215,7 @@ if not os.path.exists(output_path):
         df_e1 = extract_corrective_action()
         df_e2 = extract_conclusion_review()
 
+    print("📊 Writing Excel output...")
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df_a.to_excel(writer, sheet_name="Section A", index=False)
         df_b1.to_excel(writer, sheet_name="Section B1  Chronology Findings", index=False)
@@ -228,9 +225,11 @@ if not os.path.exists(output_path):
         df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action Ta", index=False)
         df_e2.to_excel(writer, sheet_name="SECTION E2 Conclusion and Revie", index=False)
 
+    # ✅ File write complete, verify
+    if not os.path.exists(output_path):
+        raise FileNotFoundError(f"❌ Excel file was not created at {output_path}")
+
+    print(f"✅ Excel file saved at {output_path}")
     return output_path
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5001))
-    app.run(host="0.0.0.0", port=port, debug=True)
 
