@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, render_template, url_for
+from flask_cors import CORS
 import os
 import pdfplumber
 import pandas as pd
@@ -7,9 +8,8 @@ import traceback
 from werkzeug.utils import secure_filename
 from datetime import datetime
 from supabase import create_client, Client
-from flask import Flask, request, jsonify, render_template, url_for
-from flask_cors import CORS
 
+# === Flask App with CORS ===
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 CORS(app, resources={r"/*": {"origins": "*"}})
 
@@ -17,10 +17,9 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
-
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-app = Flask(__name__, static_folder="static", static_url_path="/static")
+
 
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
