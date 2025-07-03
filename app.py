@@ -80,6 +80,13 @@ def analyze():
 def process_pdf(pdf_path, car_id, car_date, car_desc):
     id_sec_a = "300525-0001"
     output_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.xlsx")
+    print("📄 Extracting Section A")
+df_a = extract_section_a()
+print("📄 Extracting Findings")
+df_b1 = extract_findings()
+
+if not os.path.exists(output_path):
+    return jsonify({"error": "Failed to generate Excel file."}), 500
 
     with pdfplumber.open(pdf_path) as pdf:
         tables = pdf.pages[0].extract_tables()
