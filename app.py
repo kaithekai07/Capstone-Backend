@@ -13,13 +13,10 @@ from supabase import create_client, Client
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-
-
+# === Supabase ===
 SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
+SUPABASE_KEY = "your-supabase-service-role-key"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-
 
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
@@ -52,7 +49,6 @@ def analyze():
 
         output_path = process_pdf(file_path, car_id, car_date, car_desc)
 
-        # Upload metadata to Supabase
         supabase_data = {
             "car_id": car_id,
             "description": car_desc,
@@ -62,7 +58,6 @@ def analyze():
         }
         supabase.table("car_reports").insert(supabase_data).execute()
 
-        # Move result to static folder
         final_filename = f"{car_id}_output.xlsx"
         static_path = os.path.join(STATIC_FOLDER, final_filename)
         os.replace(output_path, static_path)
@@ -83,7 +78,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
     with pdfplumber.open(pdf_path) as pdf:
         tables = pdf.pages[0].extract_tables()
 
-        # --- Extract Section A & dynamic CAR No ---
         def extract_section_a():
             details = {}
             for table in tables:
@@ -107,7 +101,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
             details["ID NO. SEC A"] = car_no
             return pd.DataFrame([details]), car_no
 
-        # 🔍 Extract section A + dynamic ID
         df_a, id_sec_a = extract_section_a()
 
         def extract_findings():
@@ -158,9 +151,9 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
             titles = re.findall(r"Causal Factor[#\s]*\d+:\s*(.*)", text)
             results = []
             for i, block in enumerate(blocks):
-                pairs = re.findall(r"(Why\d.*?)\s*[-–]\s*(.*?)(?=Why\d|Causal Factor|$)", block, re.DOTALL)
+                pairs = re.findall(r"(Why\d.*?)\s*[-\u2013]\s*(.*?)(?=Why\d|Causal Factor|$)", block, re.DOTALL)
                 for why, answer in pairs:
-                    bullets = re.findall(r"•\s*(.*?)\s*(?=•|$)", answer) or [answer.strip()]
+                    bullets = re.findall(r"\u2022\s*(.*?)\s*(?=\u2022|$)", answer) or [answer.strip()]
                     for b in bullets:
                         results.append({
                             "ID NO. SEC A": id_sec_a,
@@ -208,8 +201,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                 "Rejected": ""
             }])
 
-        # 🔄 Run all extraction
-        print("📄 Extracting Findings")
         df_b1 = extract_findings()
         df_b2 = extract_cost_impact()
         df_c2 = extract_why_answers(extract_section_c_text())
@@ -217,7 +208,6 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
         df_e1 = extract_corrective_action()
         df_e2 = extract_conclusion_review()
 
-    print("📊 Writing Excel output...")
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df_a.to_excel(writer, sheet_name="Section A", index=False)
         df_b1.to_excel(writer, sheet_name="Section B1  Chronology Findings", index=False)
@@ -230,5 +220,8 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
     if not os.path.exists(output_path):
         raise FileNotFoundError(f"❌ Excel file was not created at {output_path}")
 
-    print(f"✅ Excel file saved at {output_path}")
     return output_path
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5001))
+    app.run(host="0.0.0.0", port=port, debug=True)
