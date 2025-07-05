@@ -78,34 +78,37 @@ def analyze():
         return jsonify({"error": f"❌ Server error: {str(e)}"}), 500
 
 def process_pdf(pdf_path, car_id, car_date, car_desc):
-df_a, id_sec_a = extract_section_a()
     output_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.xlsx")
 
     with pdfplumber.open(pdf_path) as pdf:
         tables = pdf.pages[0].extract_tables()
 
-def extract_section_a():
-    details = {}
-    for table in tables:
-        flat = [cell for row in table for cell in row if cell]
-        if "CAR No" in flat and "Issue Date" in flat:
-            for row in table:
-                row = [cell if cell else "" for cell in row]
-                if row[0] == "CAR No":
-                    details["CAR NO."] = row[1]
-                    details["ISSUE DATE"] = row[4]
-                elif row[0] == "Reporter":
-                    details["REPORTER"] = row[1]
-                    details["DEPARTMENT"] = row[4]
-                elif row[0] == "Client":
-                    details["CLIENT "] = row[1]
-                    details["LOCATION"] = row[4]
-                elif row[0] == "Well No.":
-                    details["WELL NO."] = row[1]
-                    details["PROJECT"] = row[4]
-    details["ID NO. SEC A"] = details.get("CAR NO.", "UNKNOWN")
-    return pd.DataFrame([details]), details.get("CAR NO.", "UNKNOWN")
+        # --- Extract Section A & dynamic CAR No ---
+        def extract_section_a():
+            details = {}
+            for table in tables:
+                flat = [cell for row in table for cell in row if cell]
+                if "CAR No" in flat and "Issue Date" in flat:
+                    for row in table:
+                        row = [cell if cell else "" for cell in row]
+                        if row[0] == "CAR No":
+                            details["CAR NO."] = row[1]
+                            details["ISSUE DATE"] = row[4]
+                        elif row[0] == "Reporter":
+                            details["REPORTER"] = row[1]
+                            details["DEPARTMENT"] = row[4]
+                        elif row[0] == "Client":
+                            details["CLIENT "] = row[1]
+                            details["LOCATION"] = row[4]
+                        elif row[0] == "Well No.":
+                            details["WELL NO."] = row[1]
+                            details["PROJECT"] = row[4]
+            car_no = details.get("CAR NO.", "UNKNOWN")
+            details["ID NO. SEC A"] = car_no
+            return pd.DataFrame([details]), car_no
 
+        # 🔍 Extract section A + dynamic ID
+        df_a, id_sec_a = extract_section_a()
 
         def extract_findings():
             for page in pdf.pages:
@@ -205,8 +208,7 @@ def extract_section_a():
                 "Rejected": ""
             }])
 
-        print("📄 Extracting Section A")
-        df_a = extract_section_a()
+        # 🔄 Run all extraction
         print("📄 Extracting Findings")
         df_b1 = extract_findings()
         df_b2 = extract_cost_impact()
@@ -225,11 +227,8 @@ def extract_section_a():
         df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action Ta", index=False)
         df_e2.to_excel(writer, sheet_name="SECTION E2 Conclusion and Revie", index=False)
 
-    # ✅ File write complete, verify
     if not os.path.exists(output_path):
         raise FileNotFoundError(f"❌ Excel file was not created at {output_path}")
 
     print(f"✅ Excel file saved at {output_path}")
     return output_path
-
-
