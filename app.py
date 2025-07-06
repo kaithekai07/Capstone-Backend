@@ -37,7 +37,7 @@ def analyze():
     try:
         file = request.files.get("file")
         car_id = request.form.get("carId", "CAR-UNKNOWN")
-        car_date = request.form.get("date", "2024-01-01")
+        car_date = request.form.get("date", str(datetime.today().date()))
         car_desc = request.form.get("description", "")
 
         if not file:
@@ -79,153 +79,50 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
     output_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.xlsx")
 
     with pdfplumber.open(pdf_path) as pdf:
-        tables = pdf.pages[0].extract_tables()
+        text_by_page = [page.extract_text() or "" for page in pdf.pages]
+        tables_by_page = [page.extract_tables() for page in pdf.pages]
 
-        def extract_section_a():
-            details = {}
-            for table in tables:
-                flat = [cell for row in table for cell in row if cell]
-                if "CAR No" in flat and "Issue Date" in flat:
-                    for row in table:
-                        row = [cell if cell else "" for cell in row]
-                        if row[0] == "CAR No":
-                            details["CAR NO."] = row[1]
-                            details["ISSUE DATE"] = row[4]
-                        elif row[0] == "Reporter":
-                            details["REPORTER"] = row[1]
-                            details["DEPARTMENT"] = row[4]
-                        elif row[0] == "Client":
-                            details["CLIENT "] = row[1]
-                            details["LOCATION"] = row[4]
-                        elif row[0] == "Well No.":
-                            details["WELL NO."] = row[1]
-                            details["PROJECT"] = row[4]
-            car_no = details.get("CAR NO.", "UNKNOWN")
-            details["ID NO. SEC A"] = car_no
-            return pd.DataFrame([details]), car_no
-
-        df_a, id_sec_a = extract_section_a()
-
-        def extract_findings():
-            for page in pdf.pages:
-                text = page.extract_text() or ""
-                if "SECTION B" in text.upper():
-                    tables = page.extract_tables()
-                    for table in tables:
-                        if "Chronology of Findings" in " ".join([cell or "" for row in table for cell in row]):
-                            return pd.DataFrame([
-                                {
-                                    "ID NO. SEC A": id_sec_a,
-                                    "CAR NO.": car_id,
-                                    "ID NO. SEC B": "1",
-                                    "DATE": row[1],
-                                    "TIME": row[2],
-                                    "DETAILS": row[3]
-                                }
-                                for row in table[1:] if len(row) >= 4
-                            ])
-            return pd.DataFrame()
-
-        def extract_cost_impact():
-            return pd.DataFrame([{
-                "ID NO. SEC A": id_sec_a,
-                "CAR NO.": car_id,
-                "ID NO. SEC B": "1",
-                "COST IMPACTED BREAKDOWN ": "Equipment Delay",
-                "COST(MYR)": "15000"
-            }])
-
-        def extract_section_c_text():
-            section_c_text = ""
+        def extract_section(pattern, text_pages):
+            content = []
             in_section = False
-            for page in pdf.pages:
-                text = page.extract_text() or ""
+            for text in text_pages:
                 for line in text.splitlines():
-                    if "SECTION C" in line.upper():
+                    if re.search(fr"SECTION {pattern}", line, re.IGNORECASE):
                         in_section = True
-                    elif "SECTION D" in line.upper():
+                    elif re.search(r"SECTION [A-E]", line, re.IGNORECASE):
+                        if in_section:
+                            return "\n".join(content).strip()
                         in_section = False
                     if in_section:
-                        section_c_text += line + "\n"
-            return section_c_text.strip()
+                        content.append(line)
+            return "\n".join(content).strip()
 
-        def extract_why_answers(text):
-            blocks = re.split(r"Causal Factor[#\s]*\d+:\s*", text)[1:]
-            titles = re.findall(r"Causal Factor[#\s]*\d+:\s*(.*)", text)
-            results = []
-            for i, block in enumerate(blocks):
-                pairs = re.findall(r"(Why\d.*?)\s*[-\u2013]\s*(.*?)(?=Why\d|Causal Factor|$)", block, re.DOTALL)
-                for why, answer in pairs:
-                    bullets = re.findall(r"\u2022\s*(.*?)\s*(?=\u2022|$)", answer) or [answer.strip()]
-                    for b in bullets:
-                        results.append({
-                            "ID NO. SEC A": id_sec_a,
-                            "CAR NO.": car_id,
-                            "ID NO. SEC C": "1",
-                            "CAUSAL FACTOR": titles[i].strip() if i < len(titles) else "",
-                            "WHY": why.strip(),
-                            "ANSWER": b.strip()
-                        })
-            return pd.DataFrame(results)
+        def default_df(columns, values):
+            return pd.DataFrame([{col: val for col, val in zip(columns, values)}])
 
-        def extract_corrections():
-            for page in pdf.pages:
-                if "Section D" in (page.extract_text() or ""):
-                    for table in page.extract_tables():
-                        return pd.DataFrame([
-                            {
-                                "ID NO. SEC A": id_sec_a,
-                                "CAR NO.": car_id,
-                                "ID NO. SEC D": "1",
-                                "CORRECTION TAKEN": row[0],
-                                "PIC": row[1],
-                                "IMPLEMENTATION DATE": row[2],
-                                "CLAUSE CODE": row[3]
-                            }
-                            for row in table[1:] if len(row) >= 4
-                        ])
-            return pd.DataFrame()
-
-        def extract_corrective_action():
-            return pd.DataFrame([{
-                "ID NO. SEC A": id_sec_a,
-                "CAR NO.": car_id,
-                "ID NO. SEC E": "1",
-                "CORRECTION ACTION": car_desc,
-                "PIC": "Safety Officer",
-                "IMPLEMENTATION DATE": car_date
-            }])
-
-        def extract_conclusion_review():
-            return pd.DataFrame([{
-                "ID NO. SEC A": id_sec_a,
-                "CAR NO.": car_id,
-                "Accepted": "Yes",
-                "Rejected": ""
-            }])
-
-        df_b1 = extract_findings()
-        df_b2 = extract_cost_impact()
-        df_c2 = extract_why_answers(extract_section_c_text())
-        df_d = extract_corrections()
-        df_e1 = extract_corrective_action()
-        df_e2 = extract_conclusion_review()
+        df_a = default_df(["CAR NO.", "ISSUE DATE", "ID NO. SEC A"], [car_id, car_date, car_id])
+        df_b1 = default_df(["DETAILS", "DATE", "TIME", "ID NO. SEC A", "CAR NO."], [car_desc, car_date, "00:00", car_id, car_id])
+        df_b2 = default_df(["COST IMPACTED BREAKDOWN", "COST(MYR)", "ID NO. SEC A", "CAR NO."], ["Equipment", "15000", car_id, car_id])
+        section_c_text = extract_section("C", text_by_page)
+        df_c2 = default_df(["WHY", "ANSWER", "ID NO. SEC A", "CAR NO."], ["Why1", section_c_text[:100], car_id, car_id])
+        df_d = default_df(["CORRECTION TAKEN", "PIC", "IMPLEMENTATION DATE", "CLAUSE CODE", "ID NO. SEC A", "CAR NO."],
+                          ["None", "Unknown", car_date, "-", car_id, car_id])
+        df_e1 = default_df(["CORRECTION ACTION", "PIC", "IMPLEMENTATION DATE", "ID NO. SEC A", "CAR NO."],
+                           [car_desc, "Safety Officer", car_date, car_id, car_id])
+        df_e2 = default_df(["Accepted", "Rejected", "ID NO. SEC A", "CAR NO."],
+                           ["Yes", "", car_id, car_id])
 
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df_a.to_excel(writer, sheet_name="Section A", index=False)
-        df_b1.to_excel(writer, sheet_name="Section B1  Chronology Findings", index=False)
-        df_b2.to_excel(writer, sheet_name="Section B2 Cost Impacted", index=False)
-        df_c2.to_excel(writer, sheet_name="Section C 5Why QA", index=False)
-        df_d.to_excel(writer, sheet_name="Section D Corrective Taken", index=False)
-        df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action Ta", index=False)
-        df_e2.to_excel(writer, sheet_name="SECTION E2 Conclusion and Revie", index=False)
-
-    if not os.path.exists(output_path):
-        raise FileNotFoundError(f"❌ Excel file was not created at {output_path}")
+        df_b1.to_excel(writer, sheet_name="Section B1", index=False)
+        df_b2.to_excel(writer, sheet_name="Section B2", index=False)
+        df_c2.to_excel(writer, sheet_name="Section C", index=False)
+        df_d.to_excel(writer, sheet_name="Section D", index=False)
+        df_e1.to_excel(writer, sheet_name="Section E1", index=False)
+        df_e2.to_excel(writer, sheet_name="Section E2", index=False)
 
     return output_path
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port, debug=True)
-
