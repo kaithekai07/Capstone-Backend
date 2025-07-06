@@ -11,7 +11,7 @@ from supabase import create_client, Client
 
 # === Flask App with CORS ===
 app = Flask(__name__, static_folder="static", static_url_path="/static")
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/*": {"origins": "https://safesightai.vercel.app"}})
 
 # === Supabase ===
 SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
