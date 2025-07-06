@@ -49,6 +49,9 @@ def analyze():
 
         output_path = process_pdf(file_path, car_id, car_date, car_desc)
 
+        if not os.path.exists(output_path):
+            return jsonify({"error": "Excel file was not generated."}), 500
+
         supabase_data = {
             "car_id": car_id,
             "description": car_desc,
