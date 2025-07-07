@@ -243,3 +243,7 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
         df_e2.to_excel(writer, sheet_name="SECTION E2 Conclusion and Revie", index=False)
 
     return output_path
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))  # use 10000 as fallback
+    app.run(host="0.0.0.0", port=port)
