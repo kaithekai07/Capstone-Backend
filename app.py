@@ -24,11 +24,6 @@ def add_cors_headers(response):
 def health():
     return "OK", 200
 
-@app.route("/analyze", methods=["POST", "OPTIONS"])
-def analyze():
-    if request.method == "OPTIONS":
-        return '', 204
-        
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
 STATIC_FOLDER = "static"
@@ -37,8 +32,12 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 os.makedirs(STATIC_FOLDER, exist_ok=True)
 
+@app.route("/analyze", methods=["POST", "OPTIONS"])
+def analyze():
+    if request.method == "OPTIONS":
+        return '', 204
+
     try:
-        # ✅ Move Supabase client here
         SUPABASE_URL = os.environ.get("SUPABASE_URL")
         SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
         if not SUPABASE_URL or not SUPABASE_KEY:
@@ -53,8 +52,8 @@ os.makedirs(STATIC_FOLDER, exist_ok=True)
         if not file:
             return jsonify({"error": "No file uploaded"}), 400
 
-        filename = secure_filename(file.filename)
-        file_path = os.path.join("uploads", filename)
+        filename = secure_filename(file.filename or f"upload_{datetime.now().timestamp()}.pdf")
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
 
         output_path = process_pdf(file_path, car_id, car_date, car_desc)
