@@ -61,7 +61,7 @@ def analyze():
         }
         supabase.table("car_reports").insert(supabase_data).execute()
 
-        final_filename = os.path.basename(output_path).replace("result", "output")
+       final_filename = os.path.basename(output_path)
         static_path = os.path.join(STATIC_FOLDER, final_filename)
         os.replace(output_path, static_path)
         os.remove(file_path)
