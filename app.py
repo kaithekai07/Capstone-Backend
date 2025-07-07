@@ -74,7 +74,7 @@ def analyze():
             "download_url": url_for('static', filename=final_filename)
         })
 
-      except Exception as e:
+    except Exception as e:  # ✔ FIXED indentation
         traceback.print_exc()
         return jsonify({"error": f"❌ Server error: {str(e)}"}), 500
 
