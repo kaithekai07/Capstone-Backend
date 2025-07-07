@@ -7,15 +7,11 @@ import re
 import traceback
 from werkzeug.utils import secure_filename
 from datetime import datetime
-from supabase import create_client, Client
+from supabase import create_client
 import shutil
 
-# === Flask App Setup ===
 app = Flask(__name__, static_folder="static", static_url_path="/static")
-CORS(app, supports_credentials=True)  # Allow all origins (for debugging/flexibility)
-
-# === Optional: Restrict CORS (uncomment to restrict)
-# CORS(app, resources={r"/*": {"origins": ["https://safesightai.vercel.app"]}}, supports_credentials=True)
+CORS(app, supports_credentials=True)
 
 @app.after_request
 def add_cors_headers(response):
@@ -24,19 +20,6 @@ def add_cors_headers(response):
     response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
     return response
 
-# === Supabase Client ===
-SUPABASE_URL = os.environ.get("https://nfcgehfenpjqrijxgzio.supabase.co")
-SUPABASE_KEY = os.environ.get("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# === File Paths ===
-UPLOAD_FOLDER = "uploads"
-OUTPUT_FOLDER = "outputs"
-STATIC_FOLDER = "static"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-os.makedirs(STATIC_FOLDER, exist_ok=True)
-
 @app.route("/health")
 def health():
     return "OK", 200
@@ -44,9 +27,16 @@ def health():
 @app.route("/analyze", methods=["POST", "OPTIONS"])
 def analyze():
     if request.method == "OPTIONS":
-        return '', 204  # Preflight response
+        return '', 204
 
     try:
+        # ✅ Move Supabase client here
+        SUPABASE_URL = os.environ.get("SUPABASE_URL")
+        SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise ValueError("Missing Supabase credentials")
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
         file = request.files.get("file")
         car_id = request.form.get("carId", "CAR-UNKNOWN")
         car_date = request.form.get("date", str(datetime.today().date()))
@@ -56,7 +46,7 @@ def analyze():
             return jsonify({"error": "No file uploaded"}), 400
 
         filename = secure_filename(file.filename)
-        file_path = os.path.join(UPLOAD_FOLDER, filename)
+        file_path = os.path.join("uploads", filename)
         file.save(file_path)
 
         output_path = process_pdf(file_path, car_id, car_date, car_desc)
