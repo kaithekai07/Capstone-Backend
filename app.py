@@ -40,8 +40,14 @@ def analyze():
     try:
         SUPABASE_URL = os.environ.get("SUPABASE_URL")
         SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+        # ✅ Debug logs
+        print("DEBUG - SUPABASE_URL:", SUPABASE_URL)
+        print("DEBUG - SUPABASE_KEY is present:", bool(SUPABASE_KEY))
+
         if not SUPABASE_URL or not SUPABASE_KEY:
             raise ValueError("Missing Supabase credentials")
+
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
         file = request.files.get("file")
@@ -254,4 +260,3 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-
