@@ -28,6 +28,14 @@ def health():
 def analyze():
     if request.method == "OPTIONS":
         return '', 204
+        
+UPLOAD_FOLDER = "uploads"
+OUTPUT_FOLDER = "outputs"
+STATIC_FOLDER = "static"
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+os.makedirs(STATIC_FOLDER, exist_ok=True)
 
     try:
         # ✅ Move Supabase client here
