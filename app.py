@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, url_for
+from flask import Flask, request, jsonify, url_for
 from flask_cors import CORS
 import os
 import pdfplumber
@@ -10,15 +10,26 @@ from datetime import datetime
 from supabase import create_client, Client
 import shutil
 
-# === Flask App with CORS ===
+# === Flask App Setup ===
 app = Flask(__name__, static_folder="static", static_url_path="/static")
-CORS(app, resources={r"/*": {"origins": "https://safesightai.vercel.app"}})
+CORS(app, supports_credentials=True)  # Allow all origins (for debugging/flexibility)
 
-# === Supabase ===
-SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
+# === Optional: Restrict CORS (uncomment to restrict)
+# CORS(app, resources={r"/*": {"origins": ["https://safesightai.vercel.app"]}}, supports_credentials=True)
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+    response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+    return response
+
+# === Supabase Client ===
+SUPABASE_URL = os.environ.get("https://nfcgehfenpjqrijxgzio.supabase.co")
+SUPABASE_KEY = os.environ.get("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# === File Paths ===
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
 STATIC_FOLDER = "static"
@@ -26,16 +37,15 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 os.makedirs(STATIC_FOLDER, exist_ok=True)
 
-@app.route("/")
-def index():
-    return render_template("upload.html")
-
 @app.route("/health")
 def health():
     return "OK", 200
 
-@app.route("/analyze", methods=["POST"])
+@app.route("/analyze", methods=["POST", "OPTIONS"])
 def analyze():
+    if request.method == "OPTIONS":
+        return '', 204  # Preflight response
+
     try:
         file = request.files.get("file")
         car_id = request.form.get("carId", "CAR-UNKNOWN")
@@ -63,18 +73,18 @@ def analyze():
         }
         supabase.table("car_reports").insert(supabase_data).execute()
 
-        final_filename = os.path.basename(output_path)  # Keep original name
+        final_filename = os.path.basename(output_path)
         static_path = os.path.join(STATIC_FOLDER, final_filename)
-        shutil.copy(output_path, static_path)  # Copy to static folder for download
+        shutil.copy(output_path, static_path)
 
         os.remove(file_path)
 
         return jsonify({
             "result": "✅ Excel generated successfully.",
-            "download_url": url_for('static', filename=final_filename)
+            "download_url": url_for('static', filename=final_filename, _external=True)
         })
 
-    except Exception as e:  # ✔ FIXED indentation
+    except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"❌ Server error: {str(e)}"}), 500
 
@@ -97,7 +107,7 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                         details["REPORTER"] = row[1]
                         details["DEPARTMENT"] = row[4]
                     elif row[0] == "Client":
-                        details["CLIENT "] = row[1]
+                        details["CLIENT"] = row[1]
                         details["LOCATION"] = row[4]
                     elif row[0] == "Well No.":
                         details["WELL NO."] = row[1]
@@ -235,15 +245,16 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
 
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df_a.to_excel(writer, sheet_name="Section A", index=False)
-        df_b1.to_excel(writer, sheet_name="Section B1  Chronology Findings", index=False)
+        df_b1.to_excel(writer, sheet_name="Section B1 Chronology", index=False)
         df_b2.to_excel(writer, sheet_name="Section B2 Cost Impacted", index=False)
         df_c2.to_excel(writer, sheet_name="Section C 5Why QA", index=False)
         df_d.to_excel(writer, sheet_name="Section D Corrective Taken", index=False)
-        df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action Ta", index=False)
-        df_e2.to_excel(writer, sheet_name="SECTION E2 Conclusion and Revie", index=False)
+        df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
+        df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
 
     return output_path
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))  # use 10000 as fallback
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
