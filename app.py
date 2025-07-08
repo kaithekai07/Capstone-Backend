@@ -57,56 +57,52 @@ def analyze():
         file.save(file_path)
 
         output_path, structured_data = process_pdf(file_path, car_id)
-
         if not os.path.exists(output_path):
             return jsonify({"error": "Excel file was not generated."}), 500
 
-        # Insert to car_reports
-        supabase_data = {
+        # Step 1: Upload Excel to Supabase Storage
+        bucket_name = "processed-files"
+        final_filename = Path(output_path).name
+        with open(output_path, "rb") as f:
+            supabase.storage.from_(bucket_name).upload(
+                path=final_filename,
+                file=f,
+                file_options={
+                    "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                },
+                upsert=True
+            )
+
+        # Step 2: Get Public URL
+        public_url = supabase.storage.from_(bucket_name).get_public_url(final_filename)
+
+        # Step 3: Insert to car_reports
+        supabase.table("car_reports").insert({
             "car_id": car_id,
             "description": car_desc,
             "date": car_date,
             "filename": filename,
             "submitted_at": datetime.utcnow().isoformat()
-        }
-        supabase.table("car_reports").insert(supabase_data).execute()
+        }).execute()
 
-        # Insert parsed data to Output_to_merge
+        # Step 4: Insert parsed data + file_url to Output_to_merge
         supabase.table("Output_to_merge").insert({
             "source_car_id": car_id,
             "filename": filename,
             "extracted_data": structured_data,
+            "file_url": public_url,
             "created_at": datetime.utcnow().isoformat()
-            "file_url": public_url,  # <- add this
         }).execute()
 
-# Step 1: Upload Excel to Supabase Storage
-bucket_name = "processed-files"
-final_filename = Path(output_path).name
+        # Step 5: Clean up
+        os.remove(file_path)
+        os.remove(output_path)
 
-# Read the Excel file and upload
-with open(output_path, "rb") as f:
-    supabase.storage.from_(bucket_name).upload(
-        path=final_filename,
-        file=f,
-        file_options={
-            "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        },
-        upsert=True
-    )
-
-# Step 2: Get Public URL
-public_url = supabase.storage.from_(bucket_name).get_public_url(final_filename)
-
-# Step 3: Clean up local files
-os.remove(file_path)
-os.remove(output_path)
-
-# Step 4: Return public download URL
-return jsonify({
-    "result": "✅ Excel generated and uploaded.",
-    "download_url": public_url
-})
+        # Step 6: Return URL
+        return jsonify({
+            "result": "✅ Excel generated and uploaded.",
+            "download_url": public_url
+        })
 
     except Exception as e:
         traceback.print_exc()
