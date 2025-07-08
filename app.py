@@ -70,7 +70,6 @@ def analyze():
                 file_options={
                     "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 },
-                upsert=True
             )
 
         # Step 2: Get Public URL
