@@ -61,7 +61,7 @@ def analyze():
             return jsonify({"error": "Excel file was not generated."}), 500
 
         # Step 1: Upload Excel to Supabase Storage
-        bucket_name = "processed-files"
+        bucket_name = "processed-car"
         final_filename = Path(output_path).name
         with open(output_path, "rb") as f:
             supabase.storage.from_(bucket_name).upload(
