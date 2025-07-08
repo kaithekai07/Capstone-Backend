@@ -32,25 +32,16 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 os.makedirs(STATIC_FOLDER, exist_ok=True)
 
+SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
+SUPABASE_KEY = "your-supabase-key-here"
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 @app.route("/analyze", methods=["POST", "OPTIONS"])
 def analyze():
     if request.method == "OPTIONS":
         return '', 204
 
     try:
-SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"  # full key
-
-
-        # ✅ Debug logs
-        print("DEBUG - SUPABASE_URL:", SUPABASE_URL)
-        print("DEBUG - SUPABASE_KEY is present:", bool(SUPABASE_KEY))
-
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            raise ValueError("Missing Supabase credentials")
-
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
         file = request.files.get("file")
         car_id = request.form.get("carId", "CAR-UNKNOWN")
         car_date = request.form.get("date", str(datetime.today().date()))
@@ -63,11 +54,12 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
 
-        output_path = process_pdf(file_path, car_id, car_date, car_desc)
+        output_path, structured_data = process_pdf(file_path, car_id)
 
         if not os.path.exists(output_path):
             return jsonify({"error": "Excel file was not generated."}), 500
 
+        # Insert to car_reports
         supabase_data = {
             "car_id": car_id,
             "description": car_desc,
@@ -77,10 +69,17 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
         }
         supabase.table("car_reports").insert(supabase_data).execute()
 
+        # Insert parsed data to Output_to_merge
+        supabase.table("Output_to_merge").insert({
+            "source_car_id": car_id,
+            "filename": filename,
+            "extracted_data": structured_data,
+            "created_at": datetime.utcnow().isoformat()
+        }).execute()
+
         final_filename = os.path.basename(output_path)
         static_path = os.path.join(STATIC_FOLDER, final_filename)
         shutil.copy(output_path, static_path)
-
         os.remove(file_path)
 
         return jsonify({
@@ -92,9 +91,8 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
         traceback.print_exc()
         return jsonify({"error": f"❌ Server error: {str(e)}"}), 500
 
-def process_pdf(pdf_path, car_id, car_date, car_desc):
+def process_pdf(pdf_path, car_id):
     output_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.xlsx")
-    id_sec_a = car_id
     car_no = car_id
 
     def extract_section_a(tables):
@@ -116,7 +114,7 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                     elif row[0] == "Well No.":
                         details["WELL NO."] = row[1]
                         details["PROJECT"] = row[4]
-        details["ID NO. SEC A"] = id_sec_a
+        details["ID NO. SEC A"] = car_id
         return pd.DataFrame([details])
 
     def extract_findings(pdf):
@@ -131,7 +129,7 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                         for row in table[1:]:
                             if len(row) >= 4:
                                 findings.append({
-                                    "ID NO. SEC A": id_sec_a,
+                                    "ID NO. SEC A": car_id,
                                     "CAR NO.": car_no,
                                     "ID NO. SEC B": "1",
                                     "DATE": row[1],
@@ -142,13 +140,7 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
         return pd.DataFrame()
 
     def extract_cost_impact():
-        return pd.DataFrame([{
-            "ID NO. SEC A": id_sec_a,
-            "CAR NO.": car_no,
-            "ID NO. SEC B": "1",
-            "COST IMPACTED BREAKDOWN ": "Equipment Delay",
-            "COST(MYR)": "15000"
-        }])
+        return pd.DataFrame([{ "ID NO. SEC A": car_id, "CAR NO.": car_no, "ID NO. SEC B": "1", "COST IMPACTED BREAKDOWN ": "Equipment Delay", "COST(MYR)": "15000" }])
 
     def extract_section_c_text(pdf):
         section_c_text = ""
@@ -169,15 +161,15 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
         titles = re.findall(r"Causal Factor[#\s]*\d+:\s*(.*)", text)
         final_data = []
         for idx, block in enumerate(causal_blocks):
-            raw_why_pairs = re.findall(r"(Why\d.*?)\s*[-–]\s*(.*?)(?=Why\d|Causal Factor|$)", block, re.DOTALL)
+            raw_why_pairs = re.findall(r"(Why\d.*?)\s*[-\u2013]\s*(.*?)(?=Why\d|Causal Factor|$)", block, re.DOTALL)
             for why_text, answer in raw_why_pairs:
                 answer = answer.strip().replace('\n', ' ')
-                bullet_points = re.findall(r"•\s*(.*?)\s*(?=•|$)", answer)
+                bullet_points = re.findall(r"\u2022\s*(.*?)\s*(?=\u2022|$)", answer)
                 if not bullet_points:
                     bullet_points = [answer]
                 for ans in bullet_points:
                     final_data.append({
-                        "ID NO. SEC A": id_sec_a,
+                        "ID NO. SEC A": car_id,
                         "CAR NO.": car_no,
                         "ID NO. SEC C": "1",
                         "CAUSAL FACTOR": titles[idx].strip() if idx < len(titles) else "",
@@ -196,7 +188,7 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                     if "Correction Taken" in flat:
                         return pd.DataFrame([
                             {
-                                "ID NO. SEC A": id_sec_a,
+                                "ID NO. SEC A": car_id,
                                 "CAR NO.": car_no,
                                 "ID NO. SEC D": "1",
                                 "CORRECTION TAKEN": row[0],
@@ -218,7 +210,7 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
                     if "Corrective Action" in flat:
                         return pd.DataFrame([
                             {
-                                "ID NO. SEC A": id_sec_a,
+                                "ID NO. SEC A": car_id,
                                 "CAR NO.": car_no,
                                 "ID NO. SEC E": "1",
                                 "CORRECTION ACTION": row[0],
@@ -230,12 +222,7 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
         return pd.DataFrame()
 
     def extract_conclusion_review():
-        return pd.DataFrame([{
-            "ID NO. SEC A": id_sec_a,
-            "CAR NO.": car_no,
-            "Accepted": "Yes",
-            "Rejected": ""
-        }])
+        return pd.DataFrame([{ "ID NO. SEC A": car_id, "CAR NO.": car_no, "Accepted": "Yes", "Rejected": "" }])
 
     with pdfplumber.open(pdf_path) as pdf:
         tables = pdf.pages[0].extract_tables()
@@ -256,8 +243,19 @@ def process_pdf(pdf_path, car_id, car_date, car_desc):
         df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
         df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
 
-    return output_path
+    structured_data = {
+        "Section_A": df_a.to_dict(orient="records"),
+        "Section_B1": df_b1.to_dict(orient="records"),
+        "Section_B2": df_b2.to_dict(orient="records"),
+        "Section_C": df_c2.to_dict(orient="records"),
+        "Section_D": df_d.to_dict(orient="records"),
+        "Section_E1": df_e1.to_dict(orient="records"),
+        "Section_E2": df_e2.to_dict(orient="records")
+    }
+
+    return output_path, structured_data
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
