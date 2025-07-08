@@ -9,6 +9,8 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 from supabase import create_client
 import shutil
+from pathlib import Path
+
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 CORS(app, supports_credentials=True)
@@ -75,17 +77,36 @@ def analyze():
             "filename": filename,
             "extracted_data": structured_data,
             "created_at": datetime.utcnow().isoformat()
+            "file_url": public_url,  # <- add this
         }).execute()
 
-        final_filename = os.path.basename(output_path)
-        static_path = os.path.join(STATIC_FOLDER, final_filename)
-        shutil.copy(output_path, static_path)
-        os.remove(file_path)
+# Step 1: Upload Excel to Supabase Storage
+bucket_name = "processed-files"
+final_filename = Path(output_path).name
 
-        return jsonify({
-            "result": "✅ Excel generated successfully.",
-            "download_url": url_for('static', filename=final_filename, _external=True)
-        })
+# Read the Excel file and upload
+with open(output_path, "rb") as f:
+    supabase.storage.from_(bucket_name).upload(
+        path=final_filename,
+        file=f,
+        file_options={
+            "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        },
+        upsert=True
+    )
+
+# Step 2: Get Public URL
+public_url = supabase.storage.from_(bucket_name).get_public_url(final_filename)
+
+# Step 3: Clean up local files
+os.remove(file_path)
+os.remove(output_path)
+
+# Step 4: Return public download URL
+return jsonify({
+    "result": "✅ Excel generated and uploaded.",
+    "download_url": public_url
+})
 
     except Exception as e:
         traceback.print_exc()
