@@ -1,7 +1,8 @@
 from flask import Flask, request, jsonify, url_for
 from flask_cors import CORS
 import os
-import pdfplumber
+from pdf2image import convert_from_path
+from paddleocr import PaddleOCR
 import pandas as pd
 import re
 import traceback
@@ -10,6 +11,8 @@ from datetime import datetime
 from supabase import create_client
 import shutil
 from pathlib import Path
+import tempfile
+import shutil
 
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
@@ -111,167 +114,121 @@ def process_pdf(pdf_path, car_id):
     output_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.xlsx")
     car_no = car_id
 
-    def extract_section_a(tables):
-        details = {}
-        for table in tables:
-            flat = [cell for row in table for cell in row if cell]
-            if "CAR No" in flat and "Issue Date" in flat:
-                for row in table:
-                    row = [cell if cell else "" for cell in row]
-                    if row[0] == "CAR No":
-                        details["CAR NO."] = row[1]
-                        details["ISSUE DATE"] = row[4]
-                    elif row[0] == "Reporter":
-                        details["REPORTER"] = row[1]
-                        details["DEPARTMENT"] = row[4]
-                    elif row[0] == "Client":
-                        details["CLIENT"] = row[1]
-                        details["LOCATION"] = row[4]
-                    elif row[0] == "Well No.":
-                        details["WELL NO."] = row[1]
-                        details["PROJECT"] = row[4]
-        details["ID NO. SEC A"] = car_id
-        return pd.DataFrame([details])
+    # Step 1: Convert PDF to images
+    image_dir = tempfile.mkdtemp()
+    images = convert_from_path(pdf_path, dpi=300, output_folder=image_dir, fmt="png")
+    image_paths = sorted([os.path.join(image_dir, f) for f in os.listdir(image_dir) if f.endswith(".png")])
 
-    def extract_findings(pdf):
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            if "SECTION B" in text.upper():
-                tables = page.extract_tables()
-                for table in tables:
-                    flat = " ".join([cell or "" for row in table for cell in row])
-                    if "Chronology of Findings" in flat:
-                        findings = []
-                        for row in table[1:]:
-                            if len(row) >= 4:
-                                findings.append({
-                                    "ID NO. SEC A": car_id,
-                                    "CAR NO.": car_no,
-                                    "ID NO. SEC B": "1",
-                                    "DATE": row[1],
-                                    "TIME": row[2],
-                                    "DETAILS": row[3]
-                                })
-                        return pd.DataFrame(findings)
-        return pd.DataFrame()
+    # Step 2: Initialize PaddleOCR
+    ocr = PaddleOCR(use_angle_cls=True, lang='en')
 
-    def extract_cost_impact():
-        return pd.DataFrame([{ "ID NO. SEC A": car_id, "CAR NO.": car_no, "ID NO. SEC B": "1", "COST IMPACTED BREAKDOWN ": "Equipment Delay", "COST(MYR)": "15000" }])
+    # Step 3: OCR-based section detection
+    section_a = []
+    chronology = []
+    section_b2 = []
+    section_c = []
+    section_d = []
+    section_e1 = []
+    section_e2 = []
 
-    def extract_section_c_text(pdf):
-        section_c_text = ""
-        in_section_c = False
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            for line in text.splitlines():
-                if "SECTION C" in line.upper():
-                    in_section_c = True
-                elif "SECTION D" in line.upper():
-                    in_section_c = False
-                if in_section_c:
-                    section_c_text += line + "\n"
-        return section_c_text.strip()
+    for i, img_path in enumerate(image_paths):
+        result = ocr.ocr(img_path, cls=True)
+        lines = [line[-1][0] for block in result for line in block]
 
-    def extract_answers_after_point(text):
-        causal_blocks = re.split(r"Causal Factor[#\s]*\d+:\s*", text)[1:]
-        titles = re.findall(r"Causal Factor[#\s]*\d+:\s*(.*)", text)
-        final_data = []
-        for idx, block in enumerate(causal_blocks):
-            raw_why_pairs = re.findall(r"(Why\d.*?)\s*[-\u2013]\s*(.*?)(?=Why\d|Causal Factor|$)", block, re.DOTALL)
-            for why_text, answer in raw_why_pairs:
-                answer = answer.strip().replace('\n', ' ')
-                bullet_points = re.findall(r"\u2022\s*(.*?)\s*(?=\u2022|$)", answer)
-                if not bullet_points:
-                    bullet_points = [answer]
-                for ans in bullet_points:
-                    final_data.append({
-                        "ID NO. SEC A": car_id,
-                        "CAR NO.": car_no,
-                        "ID NO. SEC C": "1",
-                        "CAUSAL FACTOR": titles[idx].strip() if idx < len(titles) else "",
-                        "WHY": why_text.strip(),
-                        "ANSWER": ans.strip()
-                    })
-        return pd.DataFrame(final_data)
+        for line in lines:
+            if "CAR No" in line:
+                section_a.append({
+                    "CAR NO.": line.split("CAR No")[-1].strip(),
+                    "ID NO. SEC A": car_id
+                })
+            elif "Chronology" in line or "Finding" in line:
+                chronology.append({
+                    "ID NO. SEC A": car_id,
+                    "CAR NO.": car_id,
+                    "ID NO. SEC B": f"{car_id}-B1-{i+1}",
+                    "DETAILS": line.strip()
+                })
+            elif "Cost Impact" in line or "MYR" in line:
+                section_b2.append({
+                    "ID NO. SEC A": car_id,
+                    "CAR NO.": car_id,
+                    "ID NO. SEC B": "1",
+                    "COST IMPACTED BREAKDOWN ": "Detected in OCR",
+                    "COST(MYR)": "TBA"
+                })
+            elif "Causal Factor" in line or "Why" in line:
+                section_c.append({
+                    "ID NO. SEC A": car_id,
+                    "CAR NO.": car_id,
+                    "ID NO. SEC C": "1",
+                    "CAUSAL FACTOR": "Detected in OCR",
+                    "WHY": line,
+                    "ANSWER": ""
+                })
+            elif "Correction Taken" in line:
+                section_d.append({
+                    "ID NO. SEC A": car_id,
+                    "CAR NO.": car_id,
+                    "ID NO. SEC D": "1",
+                    "CORRECTION TAKEN": line,
+                    "PIC": "",
+                    "IMPLEMENTATION DATE": "",
+                    "CLAUSE CODE": ""
+                })
+            elif "Corrective Action" in line:
+                section_e1.append({
+                    "ID NO. SEC A": car_id,
+                    "CAR NO.": car_id,
+                    "ID NO. SEC E": "1",
+                    "CORRECTION ACTION": line,
+                    "PIC": "",
+                    "IMPLEMENTATION DATE": ""
+                })
+            elif "Accepted" in line:
+                section_e2.append({
+                    "ID NO. SEC A": car_id,
+                    "CAR NO.": car_id,
+                    "Accepted": "Yes" if "X" in line else "",
+                    "Rejected": "Yes" if "Rejected" in line and "X" in line else ""
+                })
 
-    def extract_corrections(pdf):
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            if "SECTION D" in text.upper():
-                tables = page.extract_tables()
-                for table in tables:
-                    flat = " ".join([cell or "" for row in table for cell in row])
-                    if "Correction Taken" in flat:
-                        return pd.DataFrame([
-                            {
-                                "ID NO. SEC A": car_id,
-                                "CAR NO.": car_no,
-                                "ID NO. SEC D": "1",
-                                "CORRECTION TAKEN": row[0],
-                                "PIC": row[1],
-                                "IMPLEMENTATION DATE": row[2],
-                                "CLAUSE CODE": row[3] if len(row) > 3 else ""
-                            }
-                            for row in table[1:] if len(row) >= 4
-                        ])
-        return pd.DataFrame()
+    # Fallbacks if sections are empty
+    if not section_a:
+        section_a.append({"CAR NO.": car_id, "ID NO. SEC A": car_id})
+    if not section_e2:
+        section_e2.append({"ID NO. SEC A": car_id, "CAR NO.": car_id, "Accepted": "", "Rejected": ""})
 
-    def extract_corrective_action(pdf):
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            if "SECTION E" in text.upper():
-                tables = page.extract_tables()
-                for table in tables:
-                    flat = " ".join([cell or "" for row in table for cell in row])
-                    if "Corrective Action" in flat:
-                        return pd.DataFrame([
-                            {
-                                "ID NO. SEC A": car_id,
-                                "CAR NO.": car_no,
-                                "ID NO. SEC E": "1",
-                                "CORRECTION ACTION": row[0],
-                                "PIC": row[1],
-                                "IMPLEMENTATION DATE": row[2]
-                            }
-                            for row in table[1:] if len(row) >= 3
-                        ])
-        return pd.DataFrame()
+    # Convert to DataFrames
+    df_a = pd.DataFrame(section_a)
+    df_b1 = pd.DataFrame(chronology)
+    df_b2 = pd.DataFrame(section_b2)
+    df_c = pd.DataFrame(section_c)
+    df_d = pd.DataFrame(section_d)
+    df_e1 = pd.DataFrame(section_e1)
+    df_e2 = pd.DataFrame(section_e2)
 
-    def extract_conclusion_review():
-        return pd.DataFrame([{ "ID NO. SEC A": car_id, "CAR NO.": car_no, "Accepted": "Yes", "Rejected": "" }])
-
-    with pdfplumber.open(pdf_path) as pdf:
-        tables = pdf.pages[0].extract_tables()
-        df_a = extract_section_a(tables)
-        df_b1 = extract_findings(pdf)
-        df_b2 = extract_cost_impact()
-        df_c2 = extract_answers_after_point(extract_section_c_text(pdf))
-        df_d = extract_corrections(pdf)
-        df_e1 = extract_corrective_action(pdf)
-        df_e2 = extract_conclusion_review()
-
+    # Write to Excel
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df_a.to_excel(writer, sheet_name="Section A", index=False)
         df_b1.to_excel(writer, sheet_name="Section B1 Chronology", index=False)
         df_b2.to_excel(writer, sheet_name="Section B2 Cost Impacted", index=False)
-        df_c2.to_excel(writer, sheet_name="Section C 5Why QA", index=False)
+        df_c.to_excel(writer, sheet_name="Section C 5Why QA", index=False)
         df_d.to_excel(writer, sheet_name="Section D Corrective Taken", index=False)
         df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
         df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
+
+    # Clean temp images
+    shutil.rmtree(image_dir, ignore_errors=True)
 
     structured_data = {
         "Section_A": df_a.to_dict(orient="records"),
         "Section_B1": df_b1.to_dict(orient="records"),
         "Section_B2": df_b2.to_dict(orient="records"),
-        "Section_C": df_c2.to_dict(orient="records"),
+        "Section_C": df_c.to_dict(orient="records"),
         "Section_D": df_d.to_dict(orient="records"),
         "Section_E1": df_e1.to_dict(orient="records"),
         "Section_E2": df_e2.to_dict(orient="records")
     }
 
     return output_path, structured_data
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
 
