@@ -40,4 +40,13 @@ buildCommand: |
   pip install -r requirements.txt
 
 startCommand: python app.py
+services:
+  - type: web
+    name: paddle-ocr-app
+    runtime: python
+    buildCommand: |
+      echo "python_version = '3.10'" > runtime.txt
+      pip install --upgrade pip setuptools
+      pip install -r requirements.txt
+    startCommand: python app.py
 
