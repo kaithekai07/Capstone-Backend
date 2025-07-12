@@ -232,3 +232,7 @@ def process_pdf(pdf_path, car_id):
 
     return output_path, structured_data
 
+import warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+
