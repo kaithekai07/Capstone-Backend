@@ -33,3 +33,11 @@ RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
 CMD ["python", "app.py"]
+
+buildCommand: |
+  pip install --upgrade pip setuptools
+  export PYTHONWARNINGS="ignore"
+  pip install -r requirements.txt
+
+startCommand: python app.py
+
