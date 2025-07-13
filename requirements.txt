@@ -59,8 +59,10 @@ websockets==15.0.1
 Werkzeug==3.1.3
 zipp==3.23.0
 flask-cors==6.0.1
-flask-cors==6.0.1
 paddleocr==2.6.1
 paddlepaddle==2.5.2
 pdf2image==1.16.3
 setuptools>=65.0.0
+pdf2image
+openpyxl
+setuptools
