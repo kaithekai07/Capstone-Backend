@@ -21,6 +21,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 CORS(app, resources={r"/*": {"origins": "https://safesightai.vercel.app"}}, supports_credentials=True)
 
+@app.after_request
 def add_cors_headers(response):
     response.headers.add("Access-Control-Allow-Origin", "https://safesightai.vercel.app")
     response.headers.add("Access-Control-Allow-Credentials", "true")
@@ -114,13 +115,22 @@ def process_pdf(pdf_path, car_id):
     images = convert_from_path(pdf_path, dpi=300, output_folder=image_dir, fmt="png")
     image_paths = sorted([os.path.join(image_dir, f) for f in os.listdir(image_dir) if f.endswith(".png")])
 
-    ocr = PaddleOCR(use_angle_cls=True, lang='en')
+    # ✅ Updated for PaddleOCR >= 3.x
+    ocr = PaddleOCR(
+        use_angle_cls=True,
+        lang='en',
+        det_model_dir=None,
+        rec_model_dir=None,
+        cls_model_dir=None
+    )
 
     section_a, chronology, section_b2, section_c, section_d, section_e1, section_e2 = [], [], [], [], [], [], []
 
     for i, img_path in enumerate(image_paths):
         result = ocr.ocr(img_path, cls=True)
-        lines = [line[-1][0] for block in result for line in block]
+
+        # ✅ Updated result parsing
+        lines = [line[1][0] for block in result for line in block]
 
         for line in lines:
             if "CAR No" in line:
@@ -213,7 +223,5 @@ def process_pdf(pdf_path, car_id):
     return output_path, structured_data
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # ✅ dynamically use Render-assigned port
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
-
-
