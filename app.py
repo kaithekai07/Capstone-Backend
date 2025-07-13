@@ -12,8 +12,11 @@ from supabase import create_client
 import shutil
 from pathlib import Path
 import tempfile
-import shutil
+import warnings
 
+# Suppress warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 CORS(app, supports_credentials=True)
@@ -29,16 +32,17 @@ def add_cors_headers(response):
 def health():
     return "OK", 200
 
+# === Folders
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
 STATIC_FOLDER = "static"
-
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 os.makedirs(STATIC_FOLDER, exist_ok=True)
 
+# === Supabase Config
 SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
+SUPABASE_KEY = "YOUR_SUPABASE_KEY"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 @app.route("/analyze", methods=["POST", "OPTIONS"])
@@ -63,22 +67,18 @@ def analyze():
         if not os.path.exists(output_path):
             return jsonify({"error": "Excel file was not generated."}), 500
 
-        # Step 1: Upload Excel to Supabase Storage
+        # Upload Excel to Supabase
         bucket_name = "processed-car"
         final_filename = Path(output_path).name
         with open(output_path, "rb") as f:
             supabase.storage.from_(bucket_name).upload(
                 path=final_filename,
                 file=f,
-                file_options={
-                    "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                },
+                file_options={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
             )
 
-        # Step 2: Get Public URL
         public_url = supabase.storage.from_(bucket_name).get_public_url(final_filename)
 
-        # Step 3: Insert to car_reports
         supabase.table("car_reports").insert({
             "car_id": car_id,
             "description": car_desc,
@@ -87,7 +87,6 @@ def analyze():
             "submitted_at": datetime.utcnow().isoformat()
         }).execute()
 
-        # Step 4: Insert parsed data + file_url to Output_to_merge
         supabase.table("Output_to_merge").insert({
             "source_car_id": car_id,
             "filename": filename,
@@ -96,11 +95,9 @@ def analyze():
             "created_at": datetime.utcnow().isoformat()
         }).execute()
 
-        # Step 5: Clean up
         os.remove(file_path)
         os.remove(output_path)
 
-        # Step 6: Return URL
         return jsonify({
             "result": "✅ Excel generated and uploaded.",
             "download_url": public_url
@@ -112,24 +109,14 @@ def analyze():
 
 def process_pdf(pdf_path, car_id):
     output_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.xlsx")
-    car_no = car_id
 
-    # Step 1: Convert PDF to images
     image_dir = tempfile.mkdtemp()
     images = convert_from_path(pdf_path, dpi=300, output_folder=image_dir, fmt="png")
     image_paths = sorted([os.path.join(image_dir, f) for f in os.listdir(image_dir) if f.endswith(".png")])
 
-    # Step 2: Initialize PaddleOCR
     ocr = PaddleOCR(use_angle_cls=True, lang='en')
 
-    # Step 3: OCR-based section detection
-    section_a = []
-    chronology = []
-    section_b2 = []
-    section_c = []
-    section_d = []
-    section_e1 = []
-    section_e2 = []
+    section_a, chronology, section_b2, section_c, section_d, section_e1, section_e2 = [], [], [], [], [], [], []
 
     for i, img_path in enumerate(image_paths):
         result = ocr.ocr(img_path, cls=True)
@@ -137,10 +124,7 @@ def process_pdf(pdf_path, car_id):
 
         for line in lines:
             if "CAR No" in line:
-                section_a.append({
-                    "CAR NO.": line.split("CAR No")[-1].strip(),
-                    "ID NO. SEC A": car_id
-                })
+                section_a.append({"CAR NO.": line.split("CAR No")[-1].strip(), "ID NO. SEC A": car_id})
             elif "Chronology" in line or "Finding" in line:
                 chronology.append({
                     "ID NO. SEC A": car_id,
@@ -192,13 +176,11 @@ def process_pdf(pdf_path, car_id):
                     "Rejected": "Yes" if "Rejected" in line and "X" in line else ""
                 })
 
-    # Fallbacks if sections are empty
     if not section_a:
         section_a.append({"CAR NO.": car_id, "ID NO. SEC A": car_id})
     if not section_e2:
         section_e2.append({"ID NO. SEC A": car_id, "CAR NO.": car_id, "Accepted": "", "Rejected": ""})
 
-    # Convert to DataFrames
     df_a = pd.DataFrame(section_a)
     df_b1 = pd.DataFrame(chronology)
     df_b2 = pd.DataFrame(section_b2)
@@ -207,7 +189,6 @@ def process_pdf(pdf_path, car_id):
     df_e1 = pd.DataFrame(section_e1)
     df_e2 = pd.DataFrame(section_e2)
 
-    # Write to Excel
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df_a.to_excel(writer, sheet_name="Section A", index=False)
         df_b1.to_excel(writer, sheet_name="Section B1 Chronology", index=False)
@@ -217,7 +198,6 @@ def process_pdf(pdf_path, car_id):
         df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
         df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
 
-    # Clean temp images
     shutil.rmtree(image_dir, ignore_errors=True)
 
     structured_data = {
@@ -232,7 +212,7 @@ def process_pdf(pdf_path, car_id):
 
     return output_path, structured_data
 
-import warnings
-warnings.filterwarnings("ignore", category=SyntaxWarning)
-warnings.filterwarnings("ignore", category=UserWarning)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=True)
 
