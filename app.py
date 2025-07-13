@@ -21,7 +21,6 @@ warnings.filterwarnings("ignore", category=UserWarning)
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 CORS(app, resources={r"/*": {"origins": "https://safesightai.vercel.app"}}, supports_credentials=True)
 
-@app.after_request
 def add_cors_headers(response):
     response.headers.add("Access-Control-Allow-Origin", "https://safesightai.vercel.app")
     response.headers.add("Access-Control-Allow-Credentials", "true")
