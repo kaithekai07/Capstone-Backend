@@ -1,14 +1,16 @@
 services:
+services:
   - type: web
     name: capstone-backend
-    env: docker
-    dockerfilePath: ./Dockerfile
-    plan: free
-    autoDeploy: true
+    env: python
+    buildCommand: |
+      apt-get update && apt-get install -y poppler-utils
+      pip install -r requirements.txt
+    startCommand: python app.py
     envVars:
+      - key: PORT
+        value: 10000
       - key: SUPABASE_URL
         value: https://nfcgehfenpjqrijxgzio.supabase.co
       - key: SUPABASE_KEY
         value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc
-
-
