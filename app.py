@@ -192,3 +192,6 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
 
     return output_path, structured_data
 
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
