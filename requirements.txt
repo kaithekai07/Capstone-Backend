@@ -2,9 +2,9 @@ flask
 flask-cors
 pdf2image
 paddleocr
+paddlepaddle==2.5.2
 pandas
 openpyxl
 supabase
 Werkzeug
 python-multipart
-PyMuPDF
