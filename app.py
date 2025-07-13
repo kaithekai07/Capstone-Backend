@@ -214,6 +214,7 @@ def process_pdf(pdf_path, car_id):
     return output_path, structured_data
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 5000))  # ✅ dynamically use Render-assigned port
     app.run(host="0.0.0.0", port=port, debug=True)
+
 
