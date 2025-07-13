@@ -42,7 +42,7 @@ os.makedirs(STATIC_FOLDER, exist_ok=True)
 
 # === Supabase Config
 SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
-SUPABASE_KEY = "YOUR_SUPABASE_KEY"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 @app.route("/analyze", methods=["POST", "OPTIONS"])
