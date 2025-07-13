@@ -6,7 +6,6 @@ pandas
 openpyxl
 requests
 supabase
-pymupdf==1.22.5
 python-dotenv
 setuptools
 wheel
