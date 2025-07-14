@@ -279,7 +279,6 @@ def analyze():
             "Section_E2": df_e2.to_dict(orient="records")
         }
         return output_path, structured_data
-""")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
