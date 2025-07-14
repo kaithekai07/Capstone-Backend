@@ -117,8 +117,8 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                         "ANSWER": ""
                     })
 
-            # === Other Sections: Table-based with header tracking
             section_state = None
+            skip_next_row = False
 
             for table in tables:
                 for row in table:
@@ -126,36 +126,44 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                         continue
                     joined_row = " ".join(str(cell) for cell in row if cell).lower()
 
-                    # === Detect section headers and switch mode
+                    # === Section header detection
                     if "car no" in joined_row:
                         section_state = "A"
-                        continue  # Skip the header
+                        skip_next_row = True
+                        continue
                     elif "chronology" in joined_row or "finding" in joined_row:
                         section_state = "B1"
-                        continue  # Skip the header
+                        skip_next_row = True
+                        continue
                     elif "cost impact" in joined_row or "myr" in joined_row:
                         section_state = "B2"
+                        skip_next_row = True
                         continue
                     elif "correction taken" in joined_row:
                         section_state = "D"
+                        skip_next_row = True
                         continue
                     elif "corrective action" in joined_row:
                         section_state = "E1"
+                        skip_next_row = True
                         continue
                     elif "accepted" in joined_row or "rejected" in joined_row:
                         section_state = "E2"
+                        skip_next_row = True
                         continue
 
-                    # === Record row in the active section
+                    # === Skip row immediately after header
+                    if skip_next_row:
+                        skip_next_row = False
+                        continue
 
-                    # ✅ REPLACED SECTION A
+                    # === Data extraction per section
                     if section_state == "A":
                         section_a.append({
                             "CAR NO.": " ".join(str(cell) for cell in row if cell).strip(),
                             "ID NO. SEC A": car_id
                         })
 
-                    # ✅ REPLACED SECTION B1
                     elif section_state == "B1":
                         chronology.append({
                             "ID NO. SEC A": car_id,
@@ -237,6 +245,7 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
     }
 
     return output_path, structured_data
+
 
 
 if __name__ == "__main__":
