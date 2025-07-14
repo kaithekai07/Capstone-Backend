@@ -181,7 +181,6 @@ def extract_conclusion_review(id_sec_a, car_no):
 def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
     output_path = os.path.join("outputs", f"{id_sec_a}_result.xlsx")
     with pdfplumber.open(pdf_path) as pdf:
-        all_text = "\n".join(page.extract_text() or "" for page in pdf.pages)
         tables = pdf.pages[0].extract_tables()
         df_a = extract_section_a(tables, id_sec_a)
         car_no = df_a["CAR NO."].iloc[0] if "CAR NO." in df_a.columns else id_sec_a
@@ -234,7 +233,6 @@ def analyze():
         if not os.path.exists(output_path):
             return jsonify({"error": "Excel file was not generated."}), 500
 
-        # Upload
         bucket_name = "processed-car"
         final_filename = Path(output_path).name
         with open(output_path, "rb") as f:
@@ -246,7 +244,6 @@ def analyze():
 
         public_url = supabase.storage.from_(bucket_name).get_public_url(final_filename)
 
-        # Save metadata
         supabase.table("car_reports").insert({
             "car_id": car_id,
             "description": car_desc,
@@ -276,5 +273,4 @@ def analyze():
         return jsonify({"error": f"❌ Server error: {str(e)}"}), 500
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 500
