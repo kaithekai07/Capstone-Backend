@@ -103,26 +103,11 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
     with pdfplumber.open(pdf_path) as pdf:
         for i, page in enumerate(pdf.pages):
             text = page.extract_text() or ""
+            tables = page.extract_tables()
 
+            # === Section C remains text-based
             for line in text.splitlines():
-                if "CAR No" in line:
-                    section_a.append({"CAR NO.": line.split("CAR No")[-1].strip(), "ID NO. SEC A": car_id})
-                elif "Chronology" in line or "Finding" in line:
-                    chronology.append({
-                        "ID NO. SEC A": car_id,
-                        "CAR NO.": car_id,
-                        "ID NO. SEC B": f"{car_id}-B1-{i+1}",
-                        "DETAILS": line.strip()
-                    })
-                elif "Cost Impact" in line or "MYR" in line:
-                    section_b2.append({
-                        "ID NO. SEC A": car_id,
-                        "CAR NO.": car_id,
-                        "ID NO. SEC B": "1",
-                        "COST IMPACTED BREAKDOWN ": "Detected in text",
-                        "COST(MYR)": "TBA"
-                    })
-                elif "Causal Factor" in line or "Why" in line:
+                if "Causal Factor" in line or "Why" in line:
                     section_c.append({
                         "ID NO. SEC A": car_id,
                         "CAR NO.": car_id,
@@ -131,32 +116,67 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                         "WHY": line,
                         "ANSWER": ""
                     })
-                elif "Correction Taken" in line:
-                    section_d.append({
-                        "ID NO. SEC A": car_id,
-                        "CAR NO.": car_id,
-                        "ID NO. SEC D": "1",
-                        "CORRECTION TAKEN": line,
-                        "PIC": "",
-                        "IMPLEMENTATION DATE": "",
-                        "CLAUSE CODE": ""
-                    })
-                elif "Corrective Action" in line:
-                    section_e1.append({
-                        "ID NO. SEC A": car_id,
-                        "CAR NO.": car_id,
-                        "ID NO. SEC E": "1",
-                        "CORRECTION ACTION": line,
-                        "PIC": "",
-                        "IMPLEMENTATION DATE": ""
-                    })
-                elif "Accepted" in line:
-                    section_e2.append({
-                        "ID NO. SEC A": car_id,
-                        "CAR NO.": car_id,
-                        "Accepted": "Yes" if "X" in line else "",
-                        "Rejected": "Yes" if "Rejected" in line and "X" in line else ""
-                    })
+
+            # === Other sections: try table rows
+            for table in tables:
+                for row in table:
+                    if not row:
+                        continue
+                    joined_row = " ".join([cell for cell in row if cell]).lower()
+
+                    if "car no" in joined_row:
+                        section_a.append({
+                            "CAR NO.": next((cell for cell in row if "car" in cell.lower()), car_id),
+                            "ID NO. SEC A": car_id
+                        })
+
+                    elif "chronology" in joined_row or "finding" in joined_row:
+                        chronology.append({
+                            "ID NO. SEC A": car_id,
+                            "CAR NO.": car_id,
+                            "ID NO. SEC B": f"{car_id}-B1-{i+1}",
+                            "DETAILS": " ".join(row).strip()
+                        })
+
+                    elif "cost impact" in joined_row or "myr" in joined_row:
+                        section_b2.append({
+                            "ID NO. SEC A": car_id,
+                            "CAR NO.": car_id,
+                            "ID NO. SEC B": "1",
+                            "COST IMPACTED BREAKDOWN ": " ".join(row).strip(),
+                            "COST(MYR)": "TBA"
+                        })
+
+                    elif "correction taken" in joined_row:
+                        section_d.append({
+                            "ID NO. SEC A": car_id,
+                            "CAR NO.": car_id,
+                            "ID NO. SEC D": "1",
+                            "CORRECTION TAKEN": " ".join(row).strip(),
+                            "PIC": "",
+                            "IMPLEMENTATION DATE": "",
+                            "CLAUSE CODE": ""
+                        })
+
+                    elif "corrective action" in joined_row:
+                        section_e1.append({
+                            "ID NO. SEC A": car_id,
+                            "CAR NO.": car_id,
+                            "ID NO. SEC E": "1",
+                            "CORRECTION ACTION": " ".join(row).strip(),
+                            "PIC": "",
+                            "IMPLEMENTATION DATE": ""
+                        })
+
+                    elif "accepted" in joined_row:
+                        accepted = "Yes" if "x" in joined_row and "accepted" in joined_row else ""
+                        rejected = "Yes" if "x" in joined_row and "rejected" in joined_row else ""
+                        section_e2.append({
+                            "ID NO. SEC A": car_id,
+                            "CAR NO.": car_id,
+                            "Accepted": accepted,
+                            "Rejected": rejected
+                        })
 
     if not section_a:
         section_a.append({"CAR NO.": car_id, "ID NO. SEC A": car_id})
@@ -195,3 +215,4 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+besides section c, can you change the extraction method for other section extraction and please keep other functions and unrelated parts the same
