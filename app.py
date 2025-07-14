@@ -129,10 +129,10 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                     # === Detect section headers and switch mode
                     if "car no" in joined_row:
                         section_state = "A"
-                        continue
+                        continue  # Skip the header
                     elif "chronology" in joined_row or "finding" in joined_row:
                         section_state = "B1"
-                        continue
+                        continue  # Skip the header
                     elif "cost impact" in joined_row or "myr" in joined_row:
                         section_state = "B2"
                         continue
@@ -147,12 +147,15 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                         continue
 
                     # === Record row in the active section
+
+                    # ✅ REPLACED SECTION A
                     if section_state == "A":
                         section_a.append({
                             "CAR NO.": " ".join(str(cell) for cell in row if cell).strip(),
                             "ID NO. SEC A": car_id
                         })
 
+                    # ✅ REPLACED SECTION B1
                     elif section_state == "B1":
                         chronology.append({
                             "ID NO. SEC A": car_id,
@@ -234,6 +237,7 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
     }
 
     return output_path, structured_data
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
