@@ -105,7 +105,7 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
             text = page.extract_text() or ""
             tables = page.extract_tables()
 
-            # === Section C remains text-based
+            # === Section C: Keep original logic (text-based)
             for line in text.splitlines():
                 if "Causal Factor" in line or "Why" in line:
                     section_c.append({
@@ -117,20 +117,43 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                         "ANSWER": ""
                     })
 
-            # === Other sections: try table rows
+            # === Other Sections: Table-based with header tracking
+            section_state = None
+
             for table in tables:
                 for row in table:
                     if not row:
                         continue
-                    joined_row = " ".join([cell for cell in row if cell]).lower()
+                    joined_row = " ".join(str(cell) for cell in row if cell).lower()
 
+                    # === Detect section headers and switch mode
                     if "car no" in joined_row:
+                        section_state = "A"
+                        continue
+                    elif "chronology" in joined_row or "finding" in joined_row:
+                        section_state = "B1"
+                        continue
+                    elif "cost impact" in joined_row or "myr" in joined_row:
+                        section_state = "B2"
+                        continue
+                    elif "correction taken" in joined_row:
+                        section_state = "D"
+                        continue
+                    elif "corrective action" in joined_row:
+                        section_state = "E1"
+                        continue
+                    elif "accepted" in joined_row or "rejected" in joined_row:
+                        section_state = "E2"
+                        continue
+
+                    # === Record row in the active section
+                    if section_state == "A":
                         section_a.append({
-                            "CAR NO.": next((cell for cell in row if "car" in cell.lower()), car_id),
+                            "CAR NO.": " ".join(str(cell) for cell in row if cell).strip(),
                             "ID NO. SEC A": car_id
                         })
 
-                    elif "chronology" in joined_row or "finding" in joined_row:
+                    elif section_state == "B1":
                         chronology.append({
                             "ID NO. SEC A": car_id,
                             "CAR NO.": car_id,
@@ -138,7 +161,7 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                             "DETAILS": " ".join(str(cell) for cell in row if cell).strip()
                         })
 
-                    elif "cost impact" in joined_row or "myr" in joined_row:
+                    elif section_state == "B2":
                         section_b2.append({
                             "ID NO. SEC A": car_id,
                             "CAR NO.": car_id,
@@ -147,7 +170,7 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                             "COST(MYR)": "TBA"
                         })
 
-                    elif "correction taken" in joined_row:
+                    elif section_state == "D":
                         section_d.append({
                             "ID NO. SEC A": car_id,
                             "CAR NO.": car_id,
@@ -158,7 +181,7 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                             "CLAUSE CODE": ""
                         })
 
-                    elif "corrective action" in joined_row:
+                    elif section_state == "E1":
                         section_e1.append({
                             "ID NO. SEC A": car_id,
                             "CAR NO.": car_id,
@@ -168,7 +191,7 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                             "IMPLEMENTATION DATE": ""
                         })
 
-                    elif "accepted" in joined_row:
+                    elif section_state == "E2":
                         accepted = "Yes" if "x" in joined_row and "accepted" in joined_row else ""
                         rejected = "Yes" if "x" in joined_row and "rejected" in joined_row else ""
                         section_e2.append({
