@@ -114,7 +114,7 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
             text = page.extract_text() or ""
             tables = page.extract_tables()
 
-            # === Section C: Text-based
+            # === Section C: keep text-based extraction
             for line in text.splitlines():
                 if "Causal Factor" in line or "Why" in line:
                     section_c.append({
@@ -122,20 +122,19 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                         "CAR NO.": car_id,
                         "ID NO. SEC C": "1",
                         "CAUSAL FACTOR": "Detected in text",
-                        "WHY": clean_text(line),
+                        "WHY": line,
                         "ANSWER": ""
                     })
 
-            # === Table-driven sections
             section_state = None
-
             for table in tables:
                 for row in table:
-                    if not row or all(cell is None or str(cell).strip() == "" for cell in row):
+                    if not row:
                         continue
 
-                    joined_row = " ".join(clean_text(cell) for cell in row if cell).lower()
+                    joined_row = " ".join(str(cell) for cell in row if cell).lower()
 
+                    # Detect section headers
                     if "car no" in joined_row:
                         section_state = "A"
                         continue
@@ -155,55 +154,54 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                         section_state = "E2"
                         continue
 
-                    # === Extraction per section
+                    # === Section-specific extraction
+                    cleaned = [clean_text(cell) for cell in row if cell]
+
                     if section_state == "A":
-                        car_no = clean_text(row[0])[:50] if len(row) >= 1 else car_id
+                        car_no = cleaned[0] if cleaned else car_id
                         section_a.append({
                             "CAR NO.": car_no,
                             "ID NO. SEC A": car_id
                         })
 
                     elif section_state == "B1":
-                        detail = clean_text(" ".join(str(cell) for cell in row if cell))
                         chronology.append({
                             "ID NO. SEC A": car_id,
                             "CAR NO.": car_id,
                             "ID NO. SEC B": f"{car_id}-B1-{i+1}",
-                            "DETAILS": detail
+                            "DETAILS": " ".join(cleaned)
                         })
 
                     elif section_state == "B2":
-                        breakdown = clean_text(" ".join(str(cell) for cell in row if cell))
-                        match = re.search(r"\d+(?:,\d+)?(?:\.\d{2})?", breakdown)
+                        breakdown = " ".join(cleaned)
+                        cost = next((s for s in cleaned if re.search(r"\d+(?:,\d+)?(?:\.\d{2})?", s)), "TBA")
                         section_b2.append({
                             "ID NO. SEC A": car_id,
                             "CAR NO.": car_id,
                             "ID NO. SEC B": "1",
                             "COST IMPACTED BREAKDOWN ": breakdown,
-                            "COST(MYR)": match.group(0) if match else "TBA"
+                            "COST(MYR)": cost
                         })
 
                     elif section_state == "D":
-                        combined = [clean_text(cell) for cell in row if cell]
                         section_d.append({
                             "ID NO. SEC A": car_id,
                             "CAR NO.": car_id,
                             "ID NO. SEC D": "1",
-                            "CORRECTION TAKEN": combined[0] if len(combined) > 0 else "",
-                            "PIC": combined[1] if len(combined) > 1 else "",
-                            "IMPLEMENTATION DATE": combined[2] if len(combined) > 2 and date_pattern.match(combined[2]) else "",
-                            "CLAUSE CODE": combined[3] if len(combined) > 3 else ""
+                            "CORRECTION TAKEN": cleaned[0] if len(cleaned) > 0 else "",
+                            "PIC": cleaned[1] if len(cleaned) > 1 else "",
+                            "IMPLEMENTATION DATE": cleaned[2] if len(cleaned) > 2 and date_pattern.match(cleaned[2]) else "",
+                            "CLAUSE CODE": cleaned[3] if len(cleaned) > 3 else ""
                         })
 
                     elif section_state == "E1":
-                        combined = [clean_text(cell) for cell in row if cell]
                         section_e1.append({
                             "ID NO. SEC A": car_id,
                             "CAR NO.": car_id,
                             "ID NO. SEC E": "1",
-                            "CORRECTION ACTION": combined[0] if len(combined) > 0 else "",
-                            "PIC": combined[1] if len(combined) > 1 else "",
-                            "IMPLEMENTATION DATE": combined[2] if len(combined) > 2 and date_pattern.match(combined[2]) else ""
+                            "CORRECTION ACTION": cleaned[0] if len(cleaned) > 0 else "",
+                            "PIC": cleaned[1] if len(cleaned) > 1 else "",
+                            "IMPLEMENTATION DATE": cleaned[2] if len(cleaned) > 2 and date_pattern.match(cleaned[2]) else ""
                         })
 
                     elif section_state == "E2":
@@ -216,30 +214,45 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                             "Rejected": rejected
                         })
 
-    # Fallbacks
+    # === Fallbacks if empty
     if not section_a:
         section_a.append({"CAR NO.": car_id, "ID NO. SEC A": car_id})
     if not section_e2:
-        section_e2.append({"ID NO. SEC A": car_id, "CAR NO.": car_id, "Accepted": "", "Rejected": ""})
+        section_e2.append({
+            "ID NO. SEC A": car_id,
+            "CAR NO.": car_id,
+            "Accepted": "",
+            "Rejected": ""
+        })
 
-    # Save to Excel
+    # === Convert to DataFrames
+    df_a = pd.DataFrame(section_a)
+    df_b1 = pd.DataFrame(chronology)
+    df_b2 = pd.DataFrame(section_b2)
+    df_c = pd.DataFrame(section_c)
+    df_d = pd.DataFrame(section_d)
+    df_e1 = pd.DataFrame(section_e1)
+    df_e2 = pd.DataFrame(section_e2)
+
+    # === Write to Excel
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        pd.DataFrame(section_a).to_excel(writer, sheet_name="Section A", index=False)
-        pd.DataFrame(chronology).to_excel(writer, sheet_name="Section B1 Chronology", index=False)
-        pd.DataFrame(section_b2).to_excel(writer, sheet_name="Section B2 Cost Impacted", index=False)
-        pd.DataFrame(section_c).to_excel(writer, sheet_name="Section C 5Why QA", index=False)
-        pd.DataFrame(section_d).to_excel(writer, sheet_name="Section D Corrective Taken", index=False)
-        pd.DataFrame(section_e1).to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
-        pd.DataFrame(section_e2).to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
+        df_a.to_excel(writer, sheet_name="Section A", index=False)
+        df_b1.to_excel(writer, sheet_name="Section B1 Chronology", index=False)
+        df_b2.to_excel(writer, sheet_name="Section B2 Cost Impacted", index=False)
+        df_c.to_excel(writer, sheet_name="Section C 5Why QA", index=False)
+        df_d.to_excel(writer, sheet_name="Section D Corrective Taken", index=False)
+        df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
+        df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
 
+    # === Return structured data
     structured_data = {
-        "Section_A": section_a,
-        "Section_B1": chronology,
-        "Section_B2": section_b2,
-        "Section_C": section_c,
-        "Section_D": section_d,
-        "Section_E1": section_e1,
-        "Section_E2": section_e2
+        "Section_A": df_a.to_dict(orient="records"),
+        "Section_B1": df_b1.to_dict(orient="records"),
+        "Section_B2": df_b2.to_dict(orient="records"),
+        "Section_C": df_c.to_dict(orient="records"),
+        "Section_D": df_d.to_dict(orient="records"),
+        "Section_E1": df_e1.to_dict(orient="records"),
+        "Section_E2": df_e2.to_dict(orient="records")
     }
 
     return output_path, structured_data
