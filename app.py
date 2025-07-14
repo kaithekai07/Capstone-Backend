@@ -135,7 +135,7 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                             "ID NO. SEC A": car_id,
                             "CAR NO.": car_id,
                             "ID NO. SEC B": f"{car_id}-B1-{i+1}",
-                            "DETAILS": " ".join(row).strip()
+                            "DETAILS": " ".join(str(cell) for cell in row if cell).strip()
                         })
 
                     elif "cost impact" in joined_row or "myr" in joined_row:
@@ -143,7 +143,7 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                             "ID NO. SEC A": car_id,
                             "CAR NO.": car_id,
                             "ID NO. SEC B": "1",
-                            "COST IMPACTED BREAKDOWN ": " ".join(row).strip(),
+                            "COST IMPACTED BREAKDOWN ": " ".join(str(cell) for cell in row if cell).strip(),
                             "COST(MYR)": "TBA"
                         })
 
@@ -152,7 +152,7 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                             "ID NO. SEC A": car_id,
                             "CAR NO.": car_id,
                             "ID NO. SEC D": "1",
-                            "CORRECTION TAKEN": " ".join(row).strip(),
+                            "CORRECTION TAKEN": " ".join(str(cell) for cell in row if cell).strip(),
                             "PIC": "",
                             "IMPLEMENTATION DATE": "",
                             "CLAUSE CODE": ""
@@ -163,7 +163,7 @@ def process_pdf_with_pdfplumber(pdf_path, car_id):
                             "ID NO. SEC A": car_id,
                             "CAR NO.": car_id,
                             "ID NO. SEC E": "1",
-                            "CORRECTION ACTION": " ".join(row).strip(),
+                            "CORRECTION ACTION": " ".join(str(cell) for cell in row if cell).strip(),
                             "PIC": "",
                             "IMPLEMENTATION DATE": ""
                         })
