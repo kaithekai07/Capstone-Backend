@@ -1,41 +1,3 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import os
-import pdfplumber
-import pandas as pd
-from datetime import datetime
-from werkzeug.utils import secure_filename
-from supabase import create_client
-from pathlib import Path
-import shutil
-import traceback
-import re
-
-app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "https://safesightai.vercel.app"}}, supports_credentials=True)
-
-@app.after_request
-def add_cors_headers(response):
-    response.headers.add("Access-Control-Allow-Origin", "https://safesightai.vercel.app")
-    response.headers.add("Access-Control-Allow-Credentials", "true")
-    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-    response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-    return response
-
-UPLOAD_FOLDER = "uploads"
-OUTPUT_FOLDER = "outputs"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-
-SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-def clean_text(text):
-    return re.sub(r"\s+", " ", str(text).strip()) if text else ""
-
-# === Extraction Helpers ===
-
 def extract_section_a(tables, id_sec_a):
     details = {}
     for table in tables:
@@ -89,6 +51,7 @@ def extract_cost_impact(id_sec_a, car_no):
         "COST(MYR)": "15000"
     }])
 
+# ✅ Updated Section C Logic from original script
 def extract_section_c_text(pdf):
     section_c_text = ""
     in_section_c = False
@@ -209,8 +172,6 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         "Section_E2": df_e2.to_dict(orient="records")
     }
     return output_path, structured_data
-
-# === Route ===
 
 @app.route("/analyze", methods=["POST", "OPTIONS"])
 def analyze():
