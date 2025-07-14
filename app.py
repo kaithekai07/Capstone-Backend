@@ -28,10 +28,13 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ========== HELPER FUNCTIONS ==========
+def clean_text(text):
+    return re.sub(r"\s+", " ", str(text).strip()) if text else ""
+
+# === Extraction Helpers ===
 
 def extract_section_a(tables, id_sec_a):
     details = {}
@@ -208,7 +211,7 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
     }
     return output_path, structured_data
 
-# ========== MAIN ROUTE ==========
+# === Route ===
 
 @app.route("/analyze", methods=["POST", "OPTIONS"])
 def analyze():
@@ -231,6 +234,7 @@ def analyze():
         if not os.path.exists(output_path):
             return jsonify({"error": "Excel file was not generated."}), 500
 
+        # Upload
         bucket_name = "processed-car"
         final_filename = Path(output_path).name
         with open(output_path, "rb") as f:
@@ -242,6 +246,7 @@ def analyze():
 
         public_url = supabase.storage.from_(bucket_name).get_public_url(final_filename)
 
+        # Save metadata
         supabase.table("car_reports").insert({
             "car_id": car_id,
             "description": car_desc,
