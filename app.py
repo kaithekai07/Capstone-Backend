@@ -31,9 +31,9 @@ def upload_section_to_gcs(df, car_id, section_name):
     blob_path = f"{section_name}/{car_id}_{section_name}.csv"
     blob = bucket.blob(blob_path)
     blob.upload_from_string(csv_data, content_type="text/csv")
-    blob.make_public()
-    print(f"✅ Uploaded {section_name} to: {blob.public_url}")
-    return blob.public_url
+
+    url = blob.generate_signed_url(expiration=timedelta(days=7))
+    return url
 
 # Upload Excel to GCS
 def upload_excel_to_gcs(filepath):
