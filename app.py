@@ -1,3 +1,35 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import os
+import pdfplumber
+import pandas as pd
+from datetime import datetime
+from werkzeug.utils import secure_filename
+from supabase import create_client
+from pathlib import Path
+import traceback
+import re
+
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "https://safesightai.vercel.app"}}, supports_credentials=True)
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers.add("Access-Control-Allow-Origin", "https://safesightai.vercel.app")
+    response.headers.add("Access-Control-Allow-Credentials", "true")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+    response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+    return response
+
+UPLOAD_FOLDER = "uploads"
+OUTPUT_FOLDER = "outputs"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 def extract_section_a(tables, id_sec_a):
     details = {}
     for table in tables:
@@ -26,32 +58,48 @@ def extract_findings(pdf, id_sec_a, car_no):
         if "SECTION B" in text.upper():
             tables = page.extract_tables()
             for table in tables:
-                flat = " ".join([cell or "" for row in table for cell in row])
-                if "Chronology of Findings" in flat:
+                headers = [cell.strip().upper() if cell else "" for cell in table[0]]
+                if "DATE" in headers and "TIME" in headers and "DETAILS" in headers:
+                    date_idx = headers.index("DATE")
+                    time_idx = headers.index("TIME")
+                    detail_idx = headers.index("DETAILS")
                     findings = []
                     for row in table[1:]:
-                        if len(row) >= 4:
+                        if len(row) > detail_idx:
                             findings.append({
                                 "ID NO. SEC A": id_sec_a,
                                 "CAR NO.": car_no,
                                 "ID NO. SEC B": "1",
-                                "DATE": row[1],
-                                "TIME": row[2],
-                                "DETAILS": row[3]
+                                "DATE": row[date_idx],
+                                "TIME": row[time_idx],
+                                "DETAILS": row[detail_idx]
                             })
                     return pd.DataFrame(findings)
     return pd.DataFrame()
 
-def extract_cost_impact(id_sec_a, car_no):
-    return pd.DataFrame([{
-        "ID NO. SEC A": id_sec_a,
-        "CAR NO.": car_no,
-        "ID NO. SEC B": "1",
-        "COST IMPACTED BREAKDOWN ": "Equipment Delay",
-        "COST(MYR)": "15000"
-    }])
+def extract_cost_impact(pdf, id_sec_a, car_no):
+    for page in pdf.pages:
+        text = page.extract_text() or ""
+        if "SECTION B" in text.upper():
+            tables = page.extract_tables()
+            for table in tables:
+                headers = [cell.strip().upper() if cell else "" for cell in table[0]]
+                if "COST IMPACTED BREAKDOWN" in headers and "COST(MYR)" in headers:
+                    breakdown_idx = headers.index("COST IMPACTED BREAKDOWN")
+                    cost_idx = headers.index("COST(MYR)")
+                    rows = []
+                    for row in table[1:]:
+                        if len(row) > cost_idx:
+                            rows.append({
+                                "ID NO. SEC A": id_sec_a,
+                                "CAR NO.": car_no,
+                                "ID NO. SEC B": "1",
+                                "COST IMPACTED BREAKDOWN ": row[breakdown_idx],
+                                "COST(MYR)": row[cost_idx]
+                            })
+                    return pd.DataFrame(rows)
+    return pd.DataFrame()
 
-# ✅ Updated Section C Logic from original script
 def extract_section_c_text(pdf):
     section_c_text = ""
     in_section_c = False
@@ -69,25 +117,37 @@ def extract_section_c_text(pdf):
     return section_c_text.strip()
 
 def extract_answers_after_point(text, id_sec_a, car_no):
-    causal_blocks = re.split(r"Causal Factor[#\s]*\d+:\s*", text)[1:]
-    titles = re.findall(r"Causal Factor[#\s]*\d+:\s*(.*)", text)
+    normalized_text = re.sub(r'\r\n|\r', '\n', text)
+
+    causal_blocks = re.split(r'(?:Causal Factor|Root Cause Analysis)[#\s]*\d*[:\-]?\s*', normalized_text, flags=re.IGNORECASE)
+    titles = re.findall(r'(?:Causal Factor|Root Cause Analysis)[#\s]*\d*[:\-]?\s*(.*)', normalized_text, flags=re.IGNORECASE)
+
     final_data = []
-    for idx, block in enumerate(causal_blocks):
-        raw_why_pairs = re.findall(r"(Why\d.*?)\s*[-–]\s*(.*?)(?=Why\d|Causal Factor|$)", block, re.DOTALL)
-        for why_text, answer in raw_why_pairs:
-            answer = answer.strip().replace('\n', ' ')
-            bullet_points = re.findall(r"•\s*(.*?)\s*(?=•|$)", answer)
-            if not bullet_points:
-                bullet_points = [answer]
-            for ans in bullet_points:
+
+    for idx, block in enumerate(causal_blocks[1:]):
+        why_matches = re.findall(
+            r"(WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-–—]?\s*(.*?)(?=(?:WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-–—]?|$)",
+            block,
+            flags=re.DOTALL | re.IGNORECASE
+        )
+
+        for why_raw, answer_raw in why_matches:
+            why_text = ' '.join(why_raw.strip().split())
+            answer_clean = answer_raw.strip().replace('\n', ' ').replace('•', '').strip()
+            bullets = re.findall(r'•\s*(.*?)\s*(?=•|$)', answer_clean)
+            if not bullets:
+                bullets = [answer_clean]
+
+            for bullet in bullets:
                 final_data.append({
                     "ID NO. SEC A": id_sec_a,
                     "CAR NO.": car_no,
                     "ID NO. SEC C": "1",
-                    "CAUSAL FACTOR": titles[idx].strip() if idx < len(titles) else "",
-                    "WHY": why_text.strip(),
-                    "ANSWER": ans.strip()
+                    "CAUSAL FACTOR": titles[idx].strip() if idx < len(titles) else f"Factor #{idx+1}",
+                    "WHY": why_text,
+                    "ANSWER": bullet.strip()
                 })
+
     return pd.DataFrame(final_data)
 
 def extract_corrections(pdf, id_sec_a, car_no):
@@ -148,7 +208,7 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         df_a = extract_section_a(tables, id_sec_a)
         car_no = df_a["CAR NO."].iloc[0] if "CAR NO." in df_a.columns else id_sec_a
         df_b1 = extract_findings(pdf, id_sec_a, car_no)
-        df_b2 = extract_cost_impact(id_sec_a, car_no)
+        df_b2 = extract_cost_impact(pdf, id_sec_a, car_no)
         section_c_text = extract_section_c_text(pdf)
         df_c = extract_answers_after_point(section_c_text, id_sec_a, car_no)
         df_d = extract_corrections(pdf, id_sec_a, car_no)
@@ -236,3 +296,4 @@ def analyze():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
