@@ -25,7 +25,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def upload_section_to_gcs(df, car_id, section_name):
     csv_data = df.to_csv(index=False, header=False)
-    client = storage.Client.from_service_account_json("gcp-creds.json")
+client = storage.Client.from_service_account_json("/etc/secrets/gcp-creds.json")
     bucket = client.bucket("safesightai-car-reports-db")  # Replace with your GCS bucket
     blob_path = f"{section_name}/{car_id}_{section_name}.csv"
     blob = bucket.blob(blob_path)
