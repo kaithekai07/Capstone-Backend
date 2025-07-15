@@ -1,19 +1,21 @@
+# === STEP 1: Import Required Libraries ===
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import pdfplumber
 import pandas as pd
-from datetime import timedelta, datetime
+from datetime import datetime
 from werkzeug.utils import secure_filename
 from supabase import create_client
-from google.cloud import storage
 from pathlib import Path
 import traceback
 import re
 
+# === STEP 2: Initialize Flask App and CORS ===
 app = Flask(__name__)
 CORS(app, origins=["https://safesightai.vercel.app"], supports_credentials=True)
 
+# === STEP 3: Setup Folders and Supabase Client ===
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -23,7 +25,7 @@ SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Section A extraction (unchanged)
+# === STEP 4: Define PDF Parsing Functions (Section A to E) ===
 def extract_section_a(tables, id_sec_a):
     details = {}
     for table in tables:
@@ -46,7 +48,6 @@ def extract_section_a(tables, id_sec_a):
     details["ID NO. SEC A"] = id_sec_a
     return pd.DataFrame([details])
 
-# Section B1
 def extract_findings(pdf, id_sec_a, car_no):
     findings = []
     for page in pdf.pages:
@@ -73,7 +74,6 @@ def extract_findings(pdf, id_sec_a, car_no):
                             })
     return pd.DataFrame(findings)
 
-# Section B2
 def extract_cost_impact(pdf, id_sec_a, car_no):
     cost_rows = []
     for page in pdf.pages:
@@ -98,7 +98,6 @@ def extract_cost_impact(pdf, id_sec_a, car_no):
                             })
     return pd.DataFrame(cost_rows)
 
-# Section C
 def extract_section_c_text(pdf):
     section_c_text = ""
     in_section_c = False
@@ -122,7 +121,7 @@ def extract_answers_after_point(text, id_sec_a, car_no):
     final_data = []
     for idx, block in enumerate(causal_blocks[1:]):
         why_matches = re.findall(
-            r"(WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-–—]?\s*(.*?)(?=(?:WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-–—]?|$)",
+            r"(WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-\u2013\u2014]?\s*(.*?)(?=(?:WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-\u2013\u2014]?|$)",
             block,
             flags=re.DOTALL | re.IGNORECASE
         )
@@ -143,7 +142,6 @@ def extract_answers_after_point(text, id_sec_a, car_no):
                 })
     return pd.DataFrame(final_data)
 
-# Section D
 def extract_corrections(pdf, id_sec_a, car_no):
     for page in pdf.pages:
         text = page.extract_text() or ""
@@ -166,7 +164,6 @@ def extract_corrections(pdf, id_sec_a, car_no):
                     ])
     return pd.DataFrame()
 
-# Section E
 def extract_corrective_action(pdf, id_sec_a, car_no):
     for page in pdf.pages:
         text = page.extract_text() or ""
@@ -196,9 +193,9 @@ def extract_conclusion_review(id_sec_a, car_no):
         "Rejected": ""
     }])
 
-# Full processing
+# === STEP 5: Process PDF, Save Excel, Return Metadata ===
 def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
-    output_path = os.path.join("outputs", f"{id_sec_a}_result.xlsx")
+    output_path = os.path.join(OUTPUT_FOLDER, f"{id_sec_a}_result.xlsx")
     with pdfplumber.open(pdf_path) as pdf:
         tables = pdf.pages[0].extract_tables()
         df_a = extract_section_a(tables, id_sec_a)
@@ -210,7 +207,6 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         df_d = extract_corrections(pdf, id_sec_a, car_no)
         df_e1 = extract_corrective_action(pdf, id_sec_a, car_no)
         df_e2 = extract_conclusion_review(id_sec_a, car_no)
-
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df_a.to_excel(writer, sheet_name="Section A", index=False)
         df_b1.to_excel(writer, sheet_name="Section B1 Chronology", index=False)
@@ -219,7 +215,6 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         df_d.to_excel(writer, sheet_name="Section D Corrective Taken", index=False)
         df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
         df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
-
     structured_data = {
         "Section_A": df_a.to_dict(orient="records"),
         "Section_B1": df_b1.to_dict(orient="records"),
@@ -229,32 +224,33 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         "Section_E1": df_e1.to_dict(orient="records"),
         "Section_E2": df_e2.to_dict(orient="records")
     }
+    return output_path, structured_data, df_a, df_b2
 
-    return output_path, structured_data
-
-# === Flask route
-@app.route("/analyze", methods=["POST", "OPTIONS"])
+# === STEP 6: Flask API Endpoint ===
+@app.route("/analyze", methods=["POST"])
 def analyze():
-    if request.method == "OPTIONS":
-        return '', 204
     try:
         file = request.files.get("file")
         car_id = request.form.get("carId", "CAR-UNKNOWN")
         car_date = request.form.get("date", str(datetime.today().date()))
         car_desc = request.form.get("description", "")
-
         if not file:
             return jsonify({"error": "No file uploaded"}), 400
-
         filename = secure_filename(file.filename or f"upload_{datetime.now().timestamp()}.pdf")
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
 
-        output_path, structured_data = process_pdf_with_pdfplumber(file_path, car_id)
-        if not os.path.exists(output_path):
-            return jsonify({"error": "Excel file was not generated."}), 500
+        output_path, structured_data, df_a, df_b2 = process_pdf_with_pdfplumber(file_path, car_id)
 
-        # Upload to Supabase Storage
+        # Extract summary fields for master data
+        reporter = df_a["REPORTER"].iloc[0] if "REPORTER" in df_a.columns else None
+        location = df_a["LOCATION"].iloc[0] if "LOCATION" in df_a.columns else None
+        try:
+            total_cost = df_b2["COST(MYR)"].str.replace(",", "").astype(float).sum()
+        except:
+            total_cost = 0
+
+        # Upload Excel to Supabase Storage
         bucket_name = "processed-car"
         final_filename = Path(output_path).name
         with open(output_path, "rb") as f:
@@ -265,15 +261,20 @@ def analyze():
             )
         public_url = supabase.storage.from_(bucket_name).get_public_url(final_filename)
 
-        # Insert into Supabase Tables
+        # Insert master data row into Supabase
         supabase.table("car_reports").insert({
             "car_id": car_id,
             "description": car_desc,
             "date": car_date,
             "file_name": filename,
+            "file_url": public_url,
+            "reporter": reporter,
+            "location": location,
+            "total_cost": total_cost,
             "submitted_at": datetime.utcnow().isoformat()
         }).execute()
 
+        # Insert structured output
         supabase.table("Output_to_merge").insert({
             "source_car_id": car_id,
             "filename": filename,
