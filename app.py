@@ -25,8 +25,174 @@ SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+
 # === STEP 4: Define PDF Parsing Functions (Section A to E) ===
-<existing function definitions remain unchanged>
+def extract_section_a(tables, id_sec_a):
+    details = {}
+    for table in tables:
+        flat = [cell for row in table for cell in row if cell]
+        if "CAR No" in flat and "Issue Date" in flat:
+            for row in table:
+                row = [cell if cell else "" for cell in row]
+                if row[0] == "CAR No":
+                    details["CAR NO."] = row[1]
+                    details["ISSUE DATE"] = row[4]
+                elif row[0] == "Reporter":
+                    details["REPORTER"] = row[1]
+                    details["DEPARTMENT"] = row[4]
+                elif row[0] == "Client":
+                    details["CLIENT "] = row[1]
+                    details["LOCATION"] = row[4]
+                elif row[0] == "Well No.":
+                    details["WELL NO."] = row[1]
+                    details["PROJECT"] = row[4]
+    details["ID NO. SEC A"] = id_sec_a
+    return pd.DataFrame([details])
+
+def extract_findings(pdf, id_sec_a, car_no):
+    findings = []
+    for page in pdf.pages:
+        text = page.extract_text() or ""
+        if "SECTION B" in text.upper():
+            tables = page.extract_tables()
+            for table in tables:
+                if not table or len(table) < 2:
+                    continue
+                headers = [cell.strip().upper() if cell else "" for cell in table[0]]
+                if "DATE" in headers and "TIME" in headers and "DETAILS" in headers:
+                    date_idx = headers.index("DATE")
+                    time_idx = headers.index("TIME")
+                    detail_idx = headers.index("DETAILS")
+                    for row in table[1:]:
+                        if len(row) > detail_idx:
+                            findings.append({
+                                "ID NO. SEC A": id_sec_a,
+                                "CAR NO.": car_no,
+                                "ID NO. SEC B": "1",
+                                "DATE": row[date_idx].strip(),
+                                "TIME": row[time_idx].strip(),
+                                "DETAILS": row[detail_idx].strip()
+                            })
+    return pd.DataFrame(findings)
+
+def extract_cost_impact(pdf, id_sec_a, car_no):
+    cost_rows = []
+    for page in pdf.pages:
+        text = page.extract_text() or ""
+        if "SECTION B" in text.upper():
+            tables = page.extract_tables()
+            for table in tables:
+                if not table or len(table) < 2:
+                    continue
+                headers = [cell.strip().upper() if cell else "" for cell in table[0]]
+                if "COST IMPACTED BREAKDOWN" in headers and "COST(MYR)" in headers:
+                    breakdown_idx = headers.index("COST IMPACTED BREAKDOWN")
+                    cost_idx = headers.index("COST(MYR)")
+                    for row in table[1:]:
+                        if len(row) > cost_idx:
+                            cost_rows.append({
+                                "ID NO. SEC A": id_sec_a,
+                                "CAR NO.": car_no,
+                                "ID NO. SEC B": "1",
+                                "COST IMPACTED BREAKDOWN ": row[breakdown_idx].strip(),
+                                "COST(MYR)": row[cost_idx].strip()
+                            })
+    return pd.DataFrame(cost_rows)
+
+def extract_section_c_text(pdf):
+    section_c_text = ""
+    in_section_c = False
+    for page in pdf.pages:
+        text = page.extract_text() or ""
+        lines = text.splitlines()
+        for line in lines:
+            upper_line = line.strip().upper()
+            if "SECTION C" in upper_line:
+                in_section_c = True
+            elif "SECTION D" in upper_line:
+                in_section_c = False
+            if in_section_c:
+                section_c_text += line + "\n"
+    return section_c_text.strip()
+
+def extract_answers_after_point(text, id_sec_a, car_no):
+    normalized_text = re.sub(r'\r\n|\r', '\n', text)
+    causal_blocks = re.split(r'(?:Causal Factor|Root Cause Analysis)[#\s]*\d*[:\-]?\s*', normalized_text, flags=re.IGNORECASE)
+    titles = re.findall(r'(?:Causal Factor|Root Cause Analysis)[#\s]*\d*[:\-]?\s*(.*)', normalized_text, flags=re.IGNORECASE)
+    final_data = []
+    for idx, block in enumerate(causal_blocks[1:]):
+        why_matches = re.findall(
+            r"(WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-\u2013\u2014]?\s*(.*?)(?=(?:WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-\u2013\u2014]?|$)",
+            block,
+            flags=re.DOTALL | re.IGNORECASE
+        )
+        for why_raw, answer_raw in why_matches:
+            why_text = ' '.join(why_raw.strip().split())
+            answer_clean = answer_raw.strip().replace('\n', ' ').replace('•', '').strip()
+            bullets = re.findall(r'•\s*(.*?)\s*(?=•|$)', answer_clean)
+            if not bullets:
+                bullets = [answer_clean]
+            for bullet in bullets:
+                final_data.append({
+                    "ID NO. SEC A": id_sec_a,
+                    "CAR NO.": car_no,
+                    "ID NO. SEC C": "1",
+                    "CAUSAL FACTOR": titles[idx].strip() if idx < len(titles) else f"Factor #{idx+1}",
+                    "WHY": why_text,
+                    "ANSWER": bullet.strip()
+                })
+    return pd.DataFrame(final_data)
+
+def extract_corrections(pdf, id_sec_a, car_no):
+    for page in pdf.pages:
+        text = page.extract_text() or ""
+        if "SECTION D" in text.upper():
+            tables = page.extract_tables()
+            for table in tables:
+                flat = " ".join([cell or "" for row in table for cell in row])
+                if "Correction Taken" in flat:
+                    return pd.DataFrame([
+                        {
+                            "ID NO. SEC A": id_sec_a,
+                            "CAR NO.": car_no,
+                            "ID NO. SEC D": "1",
+                            "CORRECTION TAKEN": row[0],
+                            "PIC": row[1],
+                            "IMPLEMENTATION DATE": row[2],
+                            "CLAUSE CODE": row[3] if len(row) > 3 else ""
+                        }
+                        for row in table[1:] if len(row) >= 4
+                    ])
+    return pd.DataFrame()
+
+def extract_corrective_action(pdf, id_sec_a, car_no):
+    for page in pdf.pages:
+        text = page.extract_text() or ""
+        if "SECTION E" in text.upper():
+            tables = page.extract_tables()
+            for table in tables:
+                flat = " ".join([cell or "" for row in table for cell in row])
+                if "Corrective Action" in flat:
+                    return pd.DataFrame([
+                        {
+                            "ID NO. SEC A": id_sec_a,
+                            "CAR NO.": car_no,
+                            "ID NO. SEC E": "1",
+                            "CORRECTION ACTION": row[0],
+                            "PIC": row[1],
+                            "IMPLEMENTATION DATE": row[2]
+                        }
+                        for row in table[1:] if len(row) >= 3
+                    ])
+    return pd.DataFrame()
+
+def extract_conclusion_review(id_sec_a, car_no):
+    return pd.DataFrame([{
+        "ID NO. SEC A": id_sec_a,
+        "CAR NO.": car_no,
+        "Accepted": "Yes",
+        "Rejected": ""
+    }])
 
 # === STEP 5: Process PDF, Save Excel, Return Metadata ===
 def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
