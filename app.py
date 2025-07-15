@@ -6,20 +6,13 @@ import pandas as pd
 from datetime import datetime
 from werkzeug.utils import secure_filename
 from supabase import create_client
+from google.cloud import storage
 from pathlib import Path
 import traceback
 import re
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "https://safesightai.vercel.app"}}, supports_credentials=True)
-
-@app.after_request
-def add_cors_headers(response):
-    response.headers.add("Access-Control-Allow-Origin", "https://safesightai.vercel.app")
-    response.headers.add("Access-Control-Allow-Credentials", "true")
-    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-    response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-    return response
+CORS(app, origins=["https://safesightai.vercel.app"], supports_credentials=True)
 
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
@@ -33,7 +26,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 def upload_section_to_gcs(df, car_id, section_name):
     csv_data = df.to_csv(index=False, header=False)
     client = storage.Client.from_service_account_json("gcp-creds.json")
-    bucket = client.bucket("safesightai-car-reports-db")  # Replace with your bucket name
+    bucket = client.bucket("safesightai-car-reports-db")  # Replace with your GCS bucket
     blob_path = f"{section_name}/{car_id}_{section_name}.csv"
     blob = bucket.blob(blob_path)
     blob.upload_from_string(csv_data, content_type="text/csv")
@@ -82,9 +75,9 @@ def extract_findings(pdf, id_sec_a, car_no):
                                 "ID NO. SEC A": id_sec_a,
                                 "CAR NO.": car_no,
                                 "ID NO. SEC B": "1",
-                                "DATE": row[date_idx].strip() if row[date_idx] else "",
-                                "TIME": row[time_idx].strip() if row[time_idx] else "",
-                                "DETAILS": row[detail_idx].strip() if row[detail_idx] else ""
+                                "DATE": row[date_idx].strip(),
+                                "TIME": row[time_idx].strip(),
+                                "DETAILS": row[detail_idx].strip()
                             })
     return pd.DataFrame(findings)
 
@@ -107,8 +100,8 @@ def extract_cost_impact(pdf, id_sec_a, car_no):
                                 "ID NO. SEC A": id_sec_a,
                                 "CAR NO.": car_no,
                                 "ID NO. SEC B": "1",
-                                "COST IMPACTED BREAKDOWN ": row[breakdown_idx].strip() if row[breakdown_idx] else "",
-                                "COST(MYR)": row[cost_idx].strip() if row[cost_idx] else ""
+                                "COST IMPACTED BREAKDOWN ": row[breakdown_idx].strip(),
+                                "COST(MYR)": row[cost_idx].strip()
                             })
     return pd.DataFrame(cost_rows)
 
@@ -134,21 +127,18 @@ def extract_answers_after_point(text, id_sec_a, car_no):
     titles = re.findall(r'(?:Causal Factor|Root Cause Analysis)[#\s]*\d*[:\-]?\s*(.*)', normalized_text, flags=re.IGNORECASE)
 
     final_data = []
-
     for idx, block in enumerate(causal_blocks[1:]):
         why_matches = re.findall(
             r"(WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-–—]?\s*(.*?)(?=(?:WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-–—]?|$)",
             block,
             flags=re.DOTALL | re.IGNORECASE
         )
-
         for why_raw, answer_raw in why_matches:
             why_text = ' '.join(why_raw.strip().split())
             answer_clean = answer_raw.strip().replace('\n', ' ').replace('•', '').strip()
             bullets = re.findall(r'•\s*(.*?)\s*(?=•|$)', answer_clean)
             if not bullets:
                 bullets = [answer_clean]
-
             for bullet in bullets:
                 final_data.append({
                     "ID NO. SEC A": id_sec_a,
@@ -158,7 +148,6 @@ def extract_answers_after_point(text, id_sec_a, car_no):
                     "WHY": why_text,
                     "ANSWER": bullet.strip()
                 })
-
     return pd.DataFrame(final_data)
 
 def extract_corrections(pdf, id_sec_a, car_no):
@@ -235,6 +224,7 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
         df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
 
+    # Upload to GCS
     upload_section_to_gcs(df_a, id_sec_a, "section_a")
     upload_section_to_gcs(df_b1, id_sec_a, "section_b1")
     upload_section_to_gcs(df_b2, id_sec_a, "section_b2")
@@ -254,7 +244,43 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
     }
     return output_path, structured_data
 
+@app.route("/analyze", methods=["POST", "OPTIONS"])
+def analyze():
+    if request.method == "OPTIONS":
+        return '', 204
+    try:
+        file = request.files.get("file")
+        car_id = request.form.get("carId", "CAR-UNKNOWN")
+        car_date = request.form.get("date", str(datetime.today().date()))
+        car_desc = request.form.get("description", "")
+
+        if not file:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        filename = secure_filename(file.filename or f"upload_{datetime.now().timestamp()}.pdf")
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(file_path)
+
+        output_path, structured_data = process_pdf_with_pdfplumber(file_path, car_id)
+        if not os.path.exists(output_path):
+            return jsonify({"error": "Excel file was not generated."}), 500
+
+        public_url = f"https://storage.googleapis.com/safesightai-car-reports-db/outputs/{Path(output_path).name}"
+
+        os.remove(file_path)
+        os.remove(output_path)
+
+        return jsonify({
+            "result": "✅ Excel generated and uploaded.",
+            "download_url": public_url
+        })
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"❌ Server error: {str(e)}"}), 500
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
