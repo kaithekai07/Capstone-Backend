@@ -42,8 +42,9 @@ def upload_excel_to_gcs(filepath):
     filename = Path(filepath).name
     blob = bucket.blob(f"outputs/{filename}")
     blob.upload_from_filename(filepath)
-    blob.make_public()
-    return blob.public_url
+    url = blob.generate_signed_url(expiration=timedelta(days=7))
+    return url
+
 
 # Section A extraction (unchanged)
 def extract_section_a(tables, id_sec_a):
