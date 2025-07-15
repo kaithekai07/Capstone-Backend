@@ -30,6 +30,16 @@ SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+def upload_section_to_gcs(df, car_id, section_name):
+    csv_data = df.to_csv(index=False, header=False)
+    client = storage.Client.from_service_account_json("gcp-creds.json")
+    bucket = client.bucket("your-bucket-name")  # Replace with your bucket name
+    blob_path = f"{section_name}/{car_id}_{section_name}.csv"
+    blob = bucket.blob(blob_path)
+    blob.upload_from_string(csv_data, content_type="text/csv")
+    print(f"✅ Uploaded {section_name} to: gs://{bucket.name}/{blob_path}")
+    return f"gs://{bucket.name}/{blob_path}"
+
 def extract_section_a(tables, id_sec_a):
     details = {}
     for table in tables:
@@ -53,52 +63,54 @@ def extract_section_a(tables, id_sec_a):
     return pd.DataFrame([details])
 
 def extract_findings(pdf, id_sec_a, car_no):
+    findings = []
     for page in pdf.pages:
         text = page.extract_text() or ""
         if "SECTION B" in text.upper():
             tables = page.extract_tables()
             for table in tables:
+                if not table or len(table) < 2:
+                    continue
                 headers = [cell.strip().upper() if cell else "" for cell in table[0]]
                 if "DATE" in headers and "TIME" in headers and "DETAILS" in headers:
                     date_idx = headers.index("DATE")
                     time_idx = headers.index("TIME")
                     detail_idx = headers.index("DETAILS")
-                    findings = []
                     for row in table[1:]:
                         if len(row) > detail_idx:
                             findings.append({
                                 "ID NO. SEC A": id_sec_a,
                                 "CAR NO.": car_no,
                                 "ID NO. SEC B": "1",
-                                "DATE": row[date_idx],
-                                "TIME": row[time_idx],
-                                "DETAILS": row[detail_idx]
+                                "DATE": row[date_idx].strip() if row[date_idx] else "",
+                                "TIME": row[time_idx].strip() if row[time_idx] else "",
+                                "DETAILS": row[detail_idx].strip() if row[detail_idx] else ""
                             })
-                    return pd.DataFrame(findings)
-    return pd.DataFrame()
+    return pd.DataFrame(findings)
 
 def extract_cost_impact(pdf, id_sec_a, car_no):
+    cost_rows = []
     for page in pdf.pages:
         text = page.extract_text() or ""
         if "SECTION B" in text.upper():
             tables = page.extract_tables()
             for table in tables:
+                if not table or len(table) < 2:
+                    continue
                 headers = [cell.strip().upper() if cell else "" for cell in table[0]]
                 if "COST IMPACTED BREAKDOWN" in headers and "COST(MYR)" in headers:
                     breakdown_idx = headers.index("COST IMPACTED BREAKDOWN")
                     cost_idx = headers.index("COST(MYR)")
-                    rows = []
                     for row in table[1:]:
                         if len(row) > cost_idx:
-                            rows.append({
+                            cost_rows.append({
                                 "ID NO. SEC A": id_sec_a,
                                 "CAR NO.": car_no,
                                 "ID NO. SEC B": "1",
-                                "COST IMPACTED BREAKDOWN ": row[breakdown_idx],
-                                "COST(MYR)": row[cost_idx]
+                                "COST IMPACTED BREAKDOWN ": row[breakdown_idx].strip() if row[breakdown_idx] else "",
+                                "COST(MYR)": row[cost_idx].strip() if row[cost_idx] else ""
                             })
-                    return pd.DataFrame(rows)
-    return pd.DataFrame()
+    return pd.DataFrame(cost_rows)
 
 def extract_section_c_text(pdf):
     section_c_text = ""
@@ -118,7 +130,6 @@ def extract_section_c_text(pdf):
 
 def extract_answers_after_point(text, id_sec_a, car_no):
     normalized_text = re.sub(r'\r\n|\r', '\n', text)
-
     causal_blocks = re.split(r'(?:Causal Factor|Root Cause Analysis)[#\s]*\d*[:\-]?\s*', normalized_text, flags=re.IGNORECASE)
     titles = re.findall(r'(?:Causal Factor|Root Cause Analysis)[#\s]*\d*[:\-]?\s*(.*)', normalized_text, flags=re.IGNORECASE)
 
@@ -214,6 +225,7 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         df_d = extract_corrections(pdf, id_sec_a, car_no)
         df_e1 = extract_corrective_action(pdf, id_sec_a, car_no)
         df_e2 = extract_conclusion_review(id_sec_a, car_no)
+
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df_a.to_excel(writer, sheet_name="Section A", index=False)
         df_b1.to_excel(writer, sheet_name="Section B1 Chronology", index=False)
@@ -222,6 +234,15 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         df_d.to_excel(writer, sheet_name="Section D Corrective Taken", index=False)
         df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
         df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
+
+    upload_section_to_gcs(df_a, id_sec_a, "section_a")
+    upload_section_to_gcs(df_b1, id_sec_a, "section_b1")
+    upload_section_to_gcs(df_b2, id_sec_a, "section_b2")
+    upload_section_to_gcs(df_c, id_sec_a, "section_c")
+    upload_section_to_gcs(df_d, id_sec_a, "section_d")
+    upload_section_to_gcs(df_e1, id_sec_a, "section_e1")
+    upload_section_to_gcs(df_e2, id_sec_a, "section_e2")
+
     structured_data = {
         "Section_A": df_a.to_dict(orient="records"),
         "Section_B1": df_b1.to_dict(orient="records"),
@@ -232,66 +253,6 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         "Section_E2": df_e2.to_dict(orient="records")
     }
     return output_path, structured_data
-
-@app.route("/analyze", methods=["POST", "OPTIONS"])
-def analyze():
-    if request.method == "OPTIONS":
-        return '', 204
-    try:
-        file = request.files.get("file")
-        car_id = request.form.get("carId", "CAR-UNKNOWN")
-        car_date = request.form.get("date", str(datetime.today().date()))
-        car_desc = request.form.get("description", "")
-
-        if not file:
-            return jsonify({"error": "No file uploaded"}), 400
-
-        filename = secure_filename(file.filename or f"upload_{datetime.now().timestamp()}.pdf")
-        file_path = os.path.join(UPLOAD_FOLDER, filename)
-        file.save(file_path)
-
-        output_path, structured_data = process_pdf_with_pdfplumber(file_path, car_id)
-        if not os.path.exists(output_path):
-            return jsonify({"error": "Excel file was not generated."}), 500
-
-        bucket_name = "processed-car"
-        final_filename = Path(output_path).name
-        with open(output_path, "rb") as f:
-            supabase.storage.from_(bucket_name).upload(
-                path=final_filename,
-                file=f,
-                file_options={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
-            )
-
-        public_url = supabase.storage.from_(bucket_name).get_public_url(final_filename)
-
-        supabase.table("car_reports").insert({
-            "car_id": car_id,
-            "description": car_desc,
-            "date": car_date,
-            "filename": filename,
-            "submitted_at": datetime.utcnow().isoformat()
-        }).execute()
-
-        supabase.table("Output_to_merge").insert({
-            "source_car_id": car_id,
-            "filename": filename,
-            "extracted_data": structured_data,
-            "file_url": public_url,
-            "created_at": datetime.utcnow().isoformat()
-        }).execute()
-
-        os.remove(file_path)
-        os.remove(output_path)
-
-        return jsonify({
-            "result": "✅ Excel generated and uploaded.",
-            "download_url": public_url
-        })
-
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": f"❌ Server error: {str(e)}"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
