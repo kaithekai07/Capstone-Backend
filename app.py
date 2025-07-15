@@ -22,7 +22,6 @@ SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-
 def extract_section_a(tables, id_sec_a):
     details = {}
     for table in tables:
@@ -107,27 +106,25 @@ def extract_section_c_text(pdf):
             elif "SECTION D" in upper:
                 in_section_c = False
             if in_section_c:
-                section_c_text += line + "\n"
+                section_c_text += line + "\\n"
     return section_c_text.strip()
 
 def extract_answers_after_point(text, id_sec_a):
-    normalized = re.sub(r'\r\n|\r', '\n', text)
-    blocks = re.split(r'(?:Causal Factor|Root Cause Analysis)[#\s]*\d*[:\-]?\s*', normalized, flags=re.IGNORECASE)
-    titles = re.findall(r'(?:Causal Factor|Root Cause Analysis)[#\s]*\d*[:\-]?\s*(.*)', normalized, flags=re.IGNORECASE)
-
+    normalized = re.sub(r'\\r\\n|\\r', '\\n', text)
+    blocks = re.split(r'(?:Causal Factor|Root Cause Analysis)[#\\s]*\\d*[:\\-]?\\s*', normalized, flags=re.IGNORECASE)
+    titles = re.findall(r'(?:Causal Factor|Root Cause Analysis)[#\\s]*\\d*[:\\-]?\\s*(.*)', normalized, flags=re.IGNORECASE)
     final_data = []
     c_index = 1
-
     for idx, block in enumerate(blocks[1:]):
         why_matches = re.findall(
-            r"(WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-–—]?\s*(.*?)(?=(?:WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-–—]?|$)",
+            r"(WHY\\s?-?\\s?\\d+|Why\\s?-?\\s?\\d+|Why\\d+)\\s*[:\\-–—]?\\s*(.*?)(?=(?:WHY\\s?-?\\s?\\d+|Why\\s?-?\\s?\\d+|Why\\d+)\\s*[:\\-–—]?|$)",
             block,
             flags=re.DOTALL | re.IGNORECASE
         )
         for why_raw, answer_raw in why_matches:
             why_text = ' '.join(why_raw.strip().split())
-            answer_clean = answer_raw.strip().replace('\n', ' ').replace('•', '').strip()
-            bullets = re.findall(r'•\s*(.*?)\s*(?=•|$)', answer_clean)
+            answer_clean = answer_raw.strip().replace('\\n', ' ').replace('•', '').strip()
+            bullets = re.findall(r'•\\s*(.*?)\\s*(?=•|$)', answer_clean)
             if not bullets:
                 bullets = [answer_clean]
             for bullet in bullets:
