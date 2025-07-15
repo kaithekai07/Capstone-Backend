@@ -4,3 +4,4 @@ pdfplumber
 openpyxl
 pandas
 supabase
+google-cloud-storage
