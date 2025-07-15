@@ -229,6 +229,9 @@ def analyze():
     try:
         file = request.files.get("file")
         car_id = request.form.get("carId", f"CAR-{datetime.utcnow().timestamp()}")
+        car_desc = request.form.get("description", "")
+        car_date = request.form.get("date", str(datetime.today().date()))
+
         if not file:
             return jsonify({"error": "No file uploaded"}), 400
 
@@ -236,10 +239,11 @@ def analyze():
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
 
-        output_path, structured_data = process_pdf_with_pdfplumber(file_path, car_id)
+        output_path, structured_data, df_a, df_b2 = process_pdf_with_pdfplumber(file_path, car_id)
         final_filename = Path(output_path).name
         bucket = "processed-car"
 
+        # Upload Excel to Supabase Storage
         with open(output_path, "rb") as f:
             supabase.storage.from_(bucket).upload(
                 path=final_filename,
@@ -248,6 +252,42 @@ def analyze():
             )
 
         public_url = supabase.storage.from_(bucket).get_public_url(final_filename)
+
+        # === Extract summary fields ===
+        reporter = df_a["REPORTER"].iloc[0] if "REPORTER" in df_a.columns else None
+        location = df_a["LOCATION"].iloc[0] if "LOCATION" in df_a.columns else None
+        try:
+            total_cost = df_b2["COST (MYR)"].str.replace(",", "").astype(float).sum()
+        except:
+            total_cost = 0
+
+        # === Upload to merged_car_reports ===
+        supabase.table("merged_car_reports").insert({
+            "car_id": car_id,
+            "description": car_desc,
+            "date": car_date,
+            "reporter": reporter,
+            "location": location,
+            "submitted_at": datetime.utcnow().isoformat(),
+            "file_url": public_url
+        }).execute()
+
+        # === Clean existing section data ===
+        for section in ["section_a", "section_b1", "section_b2", "section_c", "section_d", "section_e1", "section_e2"]:
+            supabase.table(section).delete().eq("ID NO. SEC A", car_id).execute()
+
+        # === Insert into each section ===
+        def insert_records(table, records):
+            for chunk in [records[i:i+1000] for i in range(0, len(records), 1000)]:
+                supabase.table(table).insert(chunk).execute()
+
+        insert_records("section_a", structured_data["Section_A"])
+        insert_records("section_b1", structured_data["Section_B1"])
+        insert_records("section_b2", structured_data["Section_B2"])
+        insert_records("section_c", structured_data["Section_C"])
+        insert_records("section_d", structured_data["Section_D"])
+        insert_records("section_e1", structured_data["Section_E1"])
+        insert_records("section_e2", structured_data["Section_E2"])
 
         os.remove(file_path)
         os.remove(output_path)
