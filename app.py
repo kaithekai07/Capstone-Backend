@@ -20,19 +20,32 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 SUPABASE_URL = "https://nfcgehfenpjqrijxgzio.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2dlaGZlbnBqcXJpanhnemlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDc0Mjk4MSwiZXhwIjoyMDY2MzE4OTgxfQ.B__RkNBjBlRn9QC7L72lL2wZKO7O3Yy2iM-Da1cllpc"
+SUPABASE_KEY = "your_supabase_key_here"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Upload CSV section to GCS
 def upload_section_to_gcs(df, car_id, section_name):
     csv_data = df.to_csv(index=False, header=False)
     client = storage.Client.from_service_account_json("/etc/secrets/gcp-creds.json")
-    bucket = client.bucket("safesightai-car-reports-db")  # ✅ Correct
+    bucket = client.bucket("safesightai-car-reports-db")
     blob_path = f"{section_name}/{car_id}_{section_name}.csv"
     blob = bucket.blob(blob_path)
     blob.upload_from_string(csv_data, content_type="text/csv")
-    print(f"✅ Uploaded {section_name} to: gs://{bucket.name}/{blob_path}")
-    return f"gs://{bucket.name}/{blob_path}"
+    blob.make_public()
+    print(f"✅ Uploaded {section_name} to: {blob.public_url}")
+    return blob.public_url
 
+# Upload Excel to GCS
+def upload_excel_to_gcs(filepath):
+    client = storage.Client.from_service_account_json("/etc/secrets/gcp-creds.json")
+    bucket = client.bucket("safesightai-car-reports-db")
+    filename = Path(filepath).name
+    blob = bucket.blob(f"outputs/{filename}")
+    blob.upload_from_filename(filepath)
+    blob.make_public()
+    return blob.public_url
+
+# Section A extraction (unchanged)
 def extract_section_a(tables, id_sec_a):
     details = {}
     for table in tables:
@@ -55,6 +68,7 @@ def extract_section_a(tables, id_sec_a):
     details["ID NO. SEC A"] = id_sec_a
     return pd.DataFrame([details])
 
+# Section B1
 def extract_findings(pdf, id_sec_a, car_no):
     findings = []
     for page in pdf.pages:
@@ -81,6 +95,7 @@ def extract_findings(pdf, id_sec_a, car_no):
                             })
     return pd.DataFrame(findings)
 
+# Section B2
 def extract_cost_impact(pdf, id_sec_a, car_no):
     cost_rows = []
     for page in pdf.pages:
@@ -105,6 +120,7 @@ def extract_cost_impact(pdf, id_sec_a, car_no):
                             })
     return pd.DataFrame(cost_rows)
 
+# Section C
 def extract_section_c_text(pdf):
     section_c_text = ""
     in_section_c = False
@@ -125,7 +141,6 @@ def extract_answers_after_point(text, id_sec_a, car_no):
     normalized_text = re.sub(r'\r\n|\r', '\n', text)
     causal_blocks = re.split(r'(?:Causal Factor|Root Cause Analysis)[#\s]*\d*[:\-]?\s*', normalized_text, flags=re.IGNORECASE)
     titles = re.findall(r'(?:Causal Factor|Root Cause Analysis)[#\s]*\d*[:\-]?\s*(.*)', normalized_text, flags=re.IGNORECASE)
-
     final_data = []
     for idx, block in enumerate(causal_blocks[1:]):
         why_matches = re.findall(
@@ -150,6 +165,7 @@ def extract_answers_after_point(text, id_sec_a, car_no):
                 })
     return pd.DataFrame(final_data)
 
+# Section D
 def extract_corrections(pdf, id_sec_a, car_no):
     for page in pdf.pages:
         text = page.extract_text() or ""
@@ -172,6 +188,7 @@ def extract_corrections(pdf, id_sec_a, car_no):
                     ])
     return pd.DataFrame()
 
+# Section E
 def extract_corrective_action(pdf, id_sec_a, car_no):
     for page in pdf.pages:
         text = page.extract_text() or ""
@@ -201,6 +218,7 @@ def extract_conclusion_review(id_sec_a, car_no):
         "Rejected": ""
     }])
 
+# Full processing
 def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
     output_path = os.path.join("outputs", f"{id_sec_a}_result.xlsx")
     with pdfplumber.open(pdf_path) as pdf:
@@ -224,7 +242,7 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
         df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
 
-    # Upload to GCS
+    # Upload CSVs
     upload_section_to_gcs(df_a, id_sec_a, "section_a")
     upload_section_to_gcs(df_b1, id_sec_a, "section_b1")
     upload_section_to_gcs(df_b2, id_sec_a, "section_b2")
@@ -233,17 +251,12 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
     upload_section_to_gcs(df_e1, id_sec_a, "section_e1")
     upload_section_to_gcs(df_e2, id_sec_a, "section_e2")
 
-    structured_data = {
-        "Section_A": df_a.to_dict(orient="records"),
-        "Section_B1": df_b1.to_dict(orient="records"),
-        "Section_B2": df_b2.to_dict(orient="records"),
-        "Section_C": df_c.to_dict(orient="records"),
-        "Section_D": df_d.to_dict(orient="records"),
-        "Section_E1": df_e1.to_dict(orient="records"),
-        "Section_E2": df_e2.to_dict(orient="records")
-    }
-    return output_path, structured_data
+    # Upload Excel
+    public_url = upload_excel_to_gcs(output_path)
 
+    return output_path, public_url
+
+# === Flask route
 @app.route("/analyze", methods=["POST", "OPTIONS"])
 def analyze():
     if request.method == "OPTIONS":
@@ -261,11 +274,7 @@ def analyze():
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
 
-        output_path, structured_data = process_pdf_with_pdfplumber(file_path, car_id)
-        if not os.path.exists(output_path):
-            return jsonify({"error": "Excel file was not generated."}), 500
-
-        public_url = f"https://storage.googleapis.com/safesightai-car-reports-db/outputs/{Path(output_path).name}"
+        output_path, public_url = process_pdf_with_pdfplumber(file_path, car_id)
 
         os.remove(file_path)
         os.remove(output_path)
@@ -282,5 +291,4 @@ def analyze():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
 
