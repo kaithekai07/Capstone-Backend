@@ -214,15 +214,15 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
         df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
 
-return output_path, {
-    "Section_A": df_a.to_dict(orient="records"),
-    "Section_B1": df_b1.to_dict(orient="records"),
-    "Section_B2": df_b2.to_dict(orient="records"),
-    "Section_C": df_c.to_dict(orient="records"),
-    "Section_D": df_d.to_dict(orient="records"),
-    "Section_E1": df_e1.to_dict(orient="records"),
-    "Section_E2": df_e2.to_dict(orient="records")
-}, df_a, df_b2
+    return output_path, {
+        "Section_A": df_a.to_dict(orient="records"),
+        "Section_B1": df_b1.to_dict(orient="records"),
+        "Section_B2": df_b2.to_dict(orient="records"),
+        "Section_C": df_c.to_dict(orient="records"),
+        "Section_D": df_d.to_dict(orient="records"),
+        "Section_E1": df_e1.to_dict(orient="records"),
+        "Section_E2": df_e2.to_dict(orient="records")
+    }, df_a, df_b2
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
@@ -243,7 +243,6 @@ def analyze():
         final_filename = Path(output_path).name
         bucket = "processed-car"
 
-        # Upload Excel to Supabase Storage
         with open(output_path, "rb") as f:
             supabase.storage.from_(bucket).upload(
                 path=final_filename,
@@ -253,7 +252,6 @@ def analyze():
 
         public_url = supabase.storage.from_(bucket).get_public_url(final_filename)
 
-        # === Extract summary fields ===
         reporter = df_a["REPORTER"].iloc[0] if "REPORTER" in df_a.columns else None
         location = df_a["LOCATION"].iloc[0] if "LOCATION" in df_a.columns else None
         try:
@@ -261,7 +259,6 @@ def analyze():
         except:
             total_cost = 0
 
-        # === Upload to merged_car_reports ===
         supabase.table("merged_car_reports").insert({
             "car_id": car_id,
             "description": car_desc,
@@ -272,11 +269,9 @@ def analyze():
             "file_url": public_url
         }).execute()
 
-        # === Clean existing section data ===
         for section in ["section_a", "section_b1", "section_b2", "section_c", "section_d", "section_e1", "section_e2"]:
             supabase.table(section).delete().eq("ID NO. SEC A", car_id).execute()
 
-        # === Insert into each section ===
         def insert_records(table, records):
             for chunk in [records[i:i+1000] for i in range(0, len(records), 1000)]:
                 supabase.table(table).insert(chunk).execute()
