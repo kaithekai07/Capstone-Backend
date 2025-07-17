@@ -259,7 +259,7 @@ def analyze():
         except:
             total_cost = 0
 
-supabase.table("merged_car_reports").upsert({
+        supabase.table("merged_car_reports").insert({
             "car_id": car_id,
             "description": car_desc,
             "date": car_date,
