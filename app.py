@@ -214,15 +214,15 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
         df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
 
-    return output_path, {
-        "Section_A": df_a.to_dict(orient="records"),
-        "Section_B1": df_b1.to_dict(orient="records"),
-        "Section_B2": df_b2.to_dict(orient="records"),
-        "Section_C": df_c.to_dict(orient="records"),
-        "Section_D": df_d.to_dict(orient="records"),
-        "Section_E1": df_e1.to_dict(orient="records"),
-        "Section_E2": df_e2.to_dict(orient="records")
-    }
+return output_path, {
+    "Section_A": df_a.to_dict(orient="records"),
+    "Section_B1": df_b1.to_dict(orient="records"),
+    "Section_B2": df_b2.to_dict(orient="records"),
+    "Section_C": df_c.to_dict(orient="records"),
+    "Section_D": df_d.to_dict(orient="records"),
+    "Section_E1": df_e1.to_dict(orient="records"),
+    "Section_E2": df_e2.to_dict(orient="records")
+}, df_a, df_b2
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
