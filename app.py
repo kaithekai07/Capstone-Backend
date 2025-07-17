@@ -270,7 +270,7 @@ def analyze():
         }).execute()
 
         for section in ["section_a", "section_b1", "section_b2", "section_c", "section_d", "section_e1", "section_e2"]:
-            supabase.table(section).delete().eq("ID NO. SEC A", car_id).execute()
+            supabase.table(section).delete().eq('"ID NO. SEC A"', car_id).execute()
 
         def insert_records(table, records):
             for chunk in [records[i:i+1000] for i in range(0, len(records), 1000)]:
