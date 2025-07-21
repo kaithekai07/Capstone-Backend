@@ -258,7 +258,9 @@ def analyze():
                 file_options={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
             )
 
-        public_url = storage.get_public_url(final_filename)["publicURL"]
+public_url_response = storage.get_public_url(final_filename)
+public_url = public_url_response["publicURL"] if isinstance(public_url_response, dict) and "publicURL" in public_url_response else public_url_response
+
 
         # Rename columns to match Supabase schema
         df_a.rename(columns={
