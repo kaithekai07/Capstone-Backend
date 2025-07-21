@@ -242,18 +242,25 @@ def analyze():
         output_path, structured_data, df_a, df_b2 = process_pdf_with_pdfplumber(file_path, car_id)
         final_filename = Path(output_path).name
         bucket = "processed-car"
+        storage = supabase.storage.from_(bucket)
 
+        # Delete existing file if already present (manual overwrite)
+        try:
+            storage.remove([final_filename])
+        except Exception:
+            pass  # Ignore if file doesn't exist
+
+        # Upload without upsert
         with open(output_path, "rb") as f:
-            supabase.storage.from_(bucket).upload(
+            storage.upload(
                 path=final_filename,
                 file=f,
-                file_options={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
-                upsert=True
+                file_options={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
             )
 
-        public_url = supabase.storage.from_(bucket).get_public_url(final_filename)["publicURL"]
+        public_url = storage.get_public_url(final_filename)["publicURL"]
 
-        # Rename df_a and df_b2 columns to match Supabase schema
+        # Rename columns to match Supabase schema
         df_a.rename(columns={
             "CAR NO.": "car_no",
             "ISSUE DATE": "issue_date",
@@ -296,7 +303,7 @@ def analyze():
         for section in ["section_a", "section_b1", "section_b2", "section_c", "section_d", "section_e1", "section_e2"]:
             supabase.table(section).delete().eq("id_no_sec_a", car_id).execute()
 
-        # Optional renaming for all sections (apply similar logic for all as needed)
+        # Normalize and insert records
         def rename_section_columns(section, records):
             df = pd.DataFrame(records)
             rename_map = {
@@ -349,6 +356,7 @@ def analyze():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 
 if __name__ == "__main__":
