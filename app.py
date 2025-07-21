@@ -244,13 +244,13 @@ def analyze():
         bucket = "processed-car"
         storage = supabase.storage.from_(bucket)
 
-        # Delete existing file if already present (manual overwrite)
+        # Delete existing file if already present
         try:
             storage.remove([final_filename])
         except Exception:
             pass  # Ignore if file doesn't exist
 
-        # Upload without upsert
+        # Upload
         with open(output_path, "rb") as f:
             storage.upload(
                 path=final_filename,
@@ -258,11 +258,11 @@ def analyze():
                 file_options={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
             )
 
-public_url_response = storage.get_public_url(final_filename)
-public_url = public_url_response["publicURL"] if isinstance(public_url_response, dict) and "publicURL" in public_url_response else public_url_response
+        # Get public URL safely
+        public_url_response = storage.get_public_url(final_filename)
+        public_url = public_url_response["publicURL"] if isinstance(public_url_response, dict) and "publicURL" in public_url_response else public_url_response
 
-
-        # Rename columns to match Supabase schema
+        # Rename columns in df_a and df_b2
         df_a.rename(columns={
             "CAR NO.": "car_no",
             "ISSUE DATE": "issue_date",
@@ -301,11 +301,11 @@ public_url = public_url_response["publicURL"] if isinstance(public_url_response,
             "total_cost": total_cost
         }).execute()
 
-        # Delete old records
+        # Delete old section data
         for section in ["section_a", "section_b1", "section_b2", "section_c", "section_d", "section_e1", "section_e2"]:
             supabase.table(section).delete().eq("id_no_sec_a", car_id).execute()
 
-        # Normalize and insert records
+        # Normalize and insert section records
         def rename_section_columns(section, records):
             df = pd.DataFrame(records)
             rename_map = {
@@ -359,8 +359,5 @@ public_url = public_url_response["publicURL"] if isinstance(public_url_response,
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
