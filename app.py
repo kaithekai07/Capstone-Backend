@@ -247,15 +247,37 @@ def analyze():
             supabase.storage.from_(bucket).upload(
                 path=final_filename,
                 file=f,
-                file_options={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+                file_options={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+                upsert=True
             )
 
-        public_url = supabase.storage.from_(bucket).get_public_url(final_filename)
+        public_url = supabase.storage.from_(bucket).get_public_url(final_filename)["publicURL"]
 
-        reporter = df_a["REPORTER"].iloc[0] if "REPORTER" in df_a.columns else None
-        location = df_a["LOCATION"].iloc[0] if "LOCATION" in df_a.columns else None
+        # Rename df_a and df_b2 columns to match Supabase schema
+        df_a.rename(columns={
+            "CAR NO.": "car_no",
+            "ISSUE DATE": "issue_date",
+            "REPORTER": "reporter",
+            "DEPARTMENT": "department",
+            "CLIENT": "client",
+            "LOCATION": "location",
+            "WELL NO.": "well_no",
+            "PROJECT": "project",
+            "ID NO. SEC A": "id_no_sec_a"
+        }, inplace=True)
+
+        df_b2.rename(columns={
+            "ID NO. SEC A": "id_no_sec_a",
+            "ID NO. SEC B": "id_no_sec_b",
+            "COST IMPACT BREAKDOWN": "cost_impact_breakdown",
+            "COST (MYR)": "cost_myr"
+        }, inplace=True)
+
+        reporter = df_a["reporter"].iloc[0] if "reporter" in df_a.columns else None
+        location = df_a["location"].iloc[0] if "location" in df_a.columns else None
+
         try:
-            total_cost = df_b2["COST (MYR)"].str.replace(",", "").astype(float).sum()
+            total_cost = df_b2["cost_myr"].str.replace(",", "").astype(float).sum()
         except:
             total_cost = 0
 
@@ -266,14 +288,45 @@ def analyze():
             "reporter": reporter,
             "location": location,
             "submitted_at": datetime.utcnow().isoformat(),
-            "file_url": public_url
+            "file_url": public_url,
+            "total_cost": total_cost
         }).execute()
 
+        # Delete old records
         for section in ["section_a", "section_b1", "section_b2", "section_c", "section_d", "section_e1", "section_e2"]:
             supabase.table(section).delete().eq("id_no_sec_a", car_id).execute()
 
+        # Optional renaming for all sections (apply similar logic for all as needed)
+        def rename_section_columns(section, records):
+            df = pd.DataFrame(records)
+            rename_map = {
+                "ID NO. SEC A": "id_no_sec_a",
+                "ID NO. SEC B": "id_no_sec_b",
+                "ID NO. SEC C": "id_no_sec_c",
+                "ID NO. SEC D": "id_no_sec_d",
+                "ID NO. SEC E": "id_no_sec_e",
+                "DATE": "date",
+                "TIME": "time",
+                "DETAILS": "details",
+                "COST IMPACT BREAKDOWN": "cost_impact_breakdown",
+                "COST (MYR)": "cost_myr",
+                "CAUSAL FACTOR": "causal_factor",
+                "WHY": "why",
+                "ANSWER": "answer",
+                "CORRECTION TAKEN": "correction_taken",
+                "CORRECTION ACTION": "correction_action",
+                "PIC": "pic",
+                "IMPLEMENTATION DATE": "implementation_date",
+                "CLAUSE CODE": "clause_code",
+                "Accepted": "accepted",
+                "Rejected": "rejected"
+            }
+            df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
+            return df.to_dict(orient="records")
+
         def insert_records(table, records):
-            for chunk in [records[i:i+1000] for i in range(0, len(records), 1000)]:
+            renamed_records = rename_section_columns(table, records)
+            for chunk in [renamed_records[i:i+1000] for i in range(0, len(renamed_records), 1000)]:
                 supabase.table(table).insert(chunk).execute()
 
         insert_records("section_a", structured_data["Section_A"])
@@ -296,6 +349,7 @@ def analyze():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
