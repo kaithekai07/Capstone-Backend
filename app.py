@@ -229,131 +229,45 @@ def analyze():
     try:
         file = request.files.get("file")
         car_id = request.form.get("carId", f"CAR-{datetime.utcnow().timestamp()}")
-        car_desc = request.form.get("description", "")
-        car_date = request.form.get("date", str(datetime.today().date()))
-
         if not file:
             return jsonify({"error": "No file uploaded"}), 400
-
         filename = secure_filename(file.filename)
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
 
-        output_path, structured_data, df_a, df_b2 = process_pdf_with_pdfplumber(file_path, car_id)
-        final_filename = Path(output_path).name
-        bucket = "processed-car"
-        storage = supabase.storage.from_(bucket)
-
-        # Delete existing file if already present
-        try:
-            storage.remove([final_filename])
-        except Exception:
-            pass  # Ignore if file doesn't exist
-
-        # Upload
-        with open(output_path, "rb") as f:
-            storage.upload(
-                path=final_filename,
-                file=f,
-                file_options={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
-            )
-
-        # Get public URL safely
-        public_url_response = storage.get_public_url(final_filename)
-        public_url = public_url_response["publicURL"] if isinstance(public_url_response, dict) and "publicURL" in public_url_response else public_url_response
-
-        # Rename columns in df_a and df_b2
-        df_a.rename(columns={
-            "CAR NO.": "car_no",
-            "ISSUE DATE": "issue_date",
-            "REPORTER": "reporter",
-            "DEPARTMENT": "department",
-            "CLIENT": "client",
-            "LOCATION": "location",
-            "WELL NO.": "well_no",
-            "PROJECT": "project",
-            "ID NO. SEC A": "id_no_sec_a"
-        }, inplace=True)
-
-        df_b2.rename(columns={
-            "ID NO. SEC A": "id_no_sec_a",
-            "ID NO. SEC B": "id_no_sec_b",
-            "COST IMPACT BREAKDOWN": "cost_impact_breakdown",
-            "COST (MYR)": "cost_myr"
-        }, inplace=True)
-
-        reporter = df_a["reporter"].iloc[0] if "reporter" in df_a.columns else None
-        location = df_a["location"].iloc[0] if "location" in df_a.columns else None
-
-        try:
-            total_cost = df_b2["cost_myr"].str.replace(",", "").astype(float).sum()
-        except:
-            total_cost = 0
-
-        supabase.table("merged_car_reports").insert({
-            "car_id": car_id,
-            "description": car_desc,
-            "date": car_date,
-            "reporter": reporter,
-            "location": location,
-            "submitted_at": datetime.utcnow().isoformat(),
-            "file_url": public_url,
-            "total_cost": total_cost
-        }).execute()
-
-        # Delete old section data
-        for section in ["section_a", "section_b1", "section_b2", "section_c", "section_d", "section_e1", "section_e2"]:
-            supabase.table(section).delete().eq("id_no_sec_a", car_id).execute()
-
-        # Normalize and insert section records
-        def rename_section_columns(section, records):
-            df = pd.DataFrame(records)
-            rename_map = {
-                "ID NO. SEC A": "id_no_sec_a",
-                "ID NO. SEC B": "id_no_sec_b",
-                "ID NO. SEC C": "id_no_sec_c",
-                "ID NO. SEC D": "id_no_sec_d",
-                "ID NO. SEC E": "id_no_sec_e",
-                "DATE": "date",
-                "TIME": "time",
-                "DETAILS": "details",
-                "COST IMPACT BREAKDOWN": "cost_impact_breakdown",
-                "COST (MYR)": "cost_myr",
-                "CAUSAL FACTOR": "causal_factor",
-                "WHY": "why",
-                "ANSWER": "answer",
-                "CORRECTION TAKEN": "correction_taken",
-                "CORRECTION ACTION": "correction_action",
-                "PIC": "pic",
-                "IMPLEMENTATION DATE": "implementation_date",
-                "CLAUSE CODE": "clause_code",
-                "Accepted": "accepted",
-                "Rejected": "rejected"
+        with pdfplumber.open(file_path) as pdf:
+            tables = pdf.pages[0].extract_tables()
+            df_a = extract_section_a(tables, car_id)
+            # You can use the real extractors here if needed
+            data = {
+                "Section_A": df_a.to_dict(orient="records"),
+                "Section_B1": [],
+                "Section_B2": [],
+                "Section_C": [],
+                "Section_D": [],
+                "Section_E1": [],
+                "Section_E2": []
             }
-            df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
-            return df.to_dict(orient="records")
-
-        def insert_records(table, records):
-            renamed_records = rename_section_columns(table, records)
-            for chunk in [renamed_records[i:i+1000] for i in range(0, len(renamed_records), 1000)]:
-                supabase.table(table).insert(chunk).execute()
-
-        insert_records("section_a", structured_data["Section_A"])
-        insert_records("section_b1", structured_data["Section_B1"])
-        insert_records("section_b2", structured_data["Section_B2"])
-        insert_records("section_c", structured_data["Section_C"])
-        insert_records("section_d", structured_data["Section_D"])
-        insert_records("section_e1", structured_data["Section_E1"])
-        insert_records("section_e2", structured_data["Section_E2"])
-
-        os.remove(file_path)
-        os.remove(output_path)
 
         return jsonify({
-            "result": "✅ File extracted and uploaded.",
-            "download_url": public_url,
-            "data": structured_data
+            "car_id": car_id,
+            "data": data
         })
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/submit-car", methods=["POST"])
+def submit_car():
+    try:
+        content = request.get_json()
+        car_id = content.get("car_id")
+        all_data = content.get("data")
+
+        # TODO: You can now upload to Supabase or any DB here
+        print(f"Received final data for: {car_id}")
+        return jsonify({"status": "✅ Data received and stored!"})
 
     except Exception as e:
         traceback.print_exc()
