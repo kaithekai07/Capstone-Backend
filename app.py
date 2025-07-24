@@ -225,20 +225,94 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
     }, df_a, df_b2
 
 def clause_mapping(car_id, data):
-    import time
+    import re
+    import numpy as np
+    import pandas as pd
+    from collections import Counter
+    from sentence_transformers import SentenceTransformer, util
+    from rapidfuzz import fuzz
 
-    print(f"🚀 Finalizing CAR report for {car_id}...")
+    print(f"🔍 Running clause mapping for CAR ID: {car_id}...")
 
-    # Simulate long process (e.g., uploading to Supabase, validation, etc.)
-    time.sleep(5)  # ⏳ Replace with actual logic
+    # === Load clause reference
+    clause_ref = pd.read_excel("ISO45001_Master_Data_Refined_Final_Clause8.xlsx")
+    clause_ref["Clause Number"] = clause_ref["Clause Number"].astype(str)
+    clause_ref.dropna(subset=["Clause Detail"], inplace=True)
+    clause_descriptions = dict(zip(clause_ref["Clause Number"], clause_ref["Clause Detail"]))
+    clause_ids, clause_texts = zip(*clause_descriptions.items())
 
-    # Optionally: save a final copy
-    final_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_final.json")
-    with open(final_path, "w") as f:
-        json.dump(data, f)
+    # === Load SBERT model
+    model = SentenceTransformer("all-mpnet-base-v2")
+    clause_embeddings = model.encode(list(clause_texts), convert_to_tensor=True)
 
-    print(f"✅ Final processing done for {car_id}")
-    return {"message": "Processing complete"}
+    # === Regex rules
+    regex_clause_map = [
+        (r"\bpump|valve|equipment|maintenance|checklist\b", ["8.1.2"]),
+        (r"\bcommunication|handover|supervisor|team\b", ["8.1.4"]),
+        (r"\bsuction|operation|not operating|status|protocol\b", ["8.1.1"]),
+        (r"\bsit\b", ["8.1.3"]),
+    ]
+
+    def classify_clause_with_similarity(text):
+        scores = Counter()
+        text = str(text).lower()
+
+        # SBERT
+        query_emb = model.encode(text, convert_to_tensor=True)
+        cos_scores = util.pytorch_cos_sim(query_emb, clause_embeddings)[0].cpu().numpy()
+        scores.update({cid: score for cid, score in zip(clause_ids, cos_scores)})
+
+        # Regex
+        for pattern, clause_list in regex_clause_map:
+            if re.search(pattern, text):
+                scores.update({c: 0.1 for c in clause_list})
+
+        # RapidFuzz
+        for cid, desc in clause_descriptions.items():
+            fuzz_score = fuzz.token_sort_ratio(text, desc)
+            if fuzz_score >= 70:
+                scores[cid] += fuzz_score / 100 * 0.5
+
+        if not scores:
+            return "8.1.1", 0.0, 100.0
+
+        top_clause = max(scores.items(), key=lambda x: x[1])[0]
+        top_clause_text = clause_descriptions[top_clause]
+        top_emb = model.encode(top_clause_text, convert_to_tensor=True)
+
+        cosine_sim = float(util.pytorch_cos_sim(query_emb, top_emb)[0][0]) * 100
+        euclidean_dist = float(np.linalg.norm(query_emb.cpu().numpy() - top_emb.cpu().numpy()))
+        euclidean_percent = round(euclidean_dist * 100 / np.sqrt(len(query_emb)), 2)
+
+        return top_clause, round(cosine_sim, 2), euclidean_percent
+
+    # === Extract answers from Section_C (5Why)
+    if "Section_C" not in data:
+        return {"error": "No Section_C data found."}
+
+    df_section_c = pd.DataFrame(data["Section_C"])
+    df_section_c = df_section_c[df_section_c["ANSWER"].notna()].copy()
+
+    df_section_c[["Clause Mapped", "Cosine Similarity (%)", "Euclidean Distance (%)"]] = df_section_c["ANSWER"].apply(
+        classify_clause_with_similarity
+    ).apply(pd.Series)
+
+    # === Upload back to Supabase (optional table: clause_mapping)
+    for i, row in df_section_c.iterrows():
+        supabase.table("clause_mapping").upsert({
+            "car_id": car_id,
+            "section_c_id": row.get("ID NO. SEC C", i),
+            "causal_factor": row.get("CAUSAL FACTOR", ""),
+            "why": row.get("WHY", ""),
+            "answer": row.get("ANSWER", ""),
+            "clause": row["Clause Mapped"],
+            "cosine": row["Cosine Similarity (%)"],
+            "euclidean": row["Euclidean Distance (%)"]
+        }, on_conflict=["car_id", "section_c_id"]).execute()
+
+    print("✅ Clause mapping complete and uploaded.")
+    return {"mapped": len(df_section_c)}
+
     
 @app.route("/analyze", methods=["POST"])
 def analyze():
