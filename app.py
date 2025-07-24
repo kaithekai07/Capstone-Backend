@@ -231,27 +231,17 @@ def analyze():
         car_id = request.form.get("carId", f"CAR-{datetime.utcnow().timestamp()}")
         if not file:
             return jsonify({"error": "No file uploaded"}), 400
+
         filename = secure_filename(file.filename)
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
 
-        with pdfplumber.open(file_path) as pdf:
-            tables = pdf.pages[0].extract_tables()
-            df_a = extract_section_a(tables, car_id)
-            # You can use the real extractors here if needed
-            data = {
-                "Section_A": df_a.to_dict(orient="records"),
-                "Section_B1": [],
-                "Section_B2": [],
-                "Section_C": [],
-                "Section_D": [],
-                "Section_E1": [],
-                "Section_E2": []
-            }
+        # ✅ Use full extraction logic
+        output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(file_path, car_id)
 
         return jsonify({
             "car_id": car_id,
-            "data": data
+            "data": extracted_data
         })
 
     except Exception as e:
@@ -265,8 +255,8 @@ def submit_car():
         car_id = content.get("car_id")
         all_data = content.get("data")
 
-        # TODO: You can now upload to Supabase or any DB here
-        print(f"Received final data for: {car_id}")
+        # 📝 You can insert `all_data` into Supabase here
+        print(f"✅ Final reviewed data received for: {car_id}")
         return jsonify({"status": "✅ Data received and stored!"})
 
     except Exception as e:
