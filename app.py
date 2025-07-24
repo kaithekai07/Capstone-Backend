@@ -236,11 +236,11 @@ def analyze():
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
 
-        output_path, structured_data, df_a, df_b2 = process_pdf_with_pdfplumber(file_path, car_id)
+        output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(file_path, car_id)
 
         return jsonify({
             "car_id": car_id,
-            "data": structured_data
+            "data": extracted_data
         })
 
     except Exception as e:
