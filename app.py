@@ -263,7 +263,7 @@ def submit_car():
         print(f"✅ Final reviewed data received for: {car_id}")
 
         # ✅ Step 2: Trigger final processing (simulate long task here)
-        result = finalize_processing(car_id, all_data)
+        result = clause_mapping(car_id, all_data)
 
         return jsonify({"status": "✅ Final processing complete!", "result": result})
 
