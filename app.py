@@ -238,9 +238,10 @@ def analyze():
 
         # 🔥 CALL YOUR EXTRACTORS HERE
         output_path, structured_data, df_a, df_b2 = process_pdf_with_pdfplumber(file_path, car_id)
-# Save extracted data to JSON for future review
-with open(os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json"), "w") as f:
-    json.dump(structured_data, f)
+
+        # ✅ FIXED INDENTATION HERE
+        with open(os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json"), "w") as f:
+            json.dump(structured_data, f)
 
         return jsonify({
             "car_id": car_id,
