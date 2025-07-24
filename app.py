@@ -263,5 +263,18 @@ def submit_car():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route("/get-car/<car_id>")
+def get_car(car_id):
+    try:
+        json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
+        if not os.path.exists(json_path):
+            return jsonify({"error": "Data not found"}), 404
+        with open(json_path, "r") as f:
+            data = json.load(f)
+        return jsonify({"car_id": car_id, "data": data})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
