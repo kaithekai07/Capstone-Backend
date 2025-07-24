@@ -224,6 +224,22 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         "Section_E2": df_e2.to_dict(orient="records")
     }, df_a, df_b2
 
+def clause_mapping(car_id, data):
+    import time
+
+    print(f"🚀 Finalizing CAR report for {car_id}...")
+
+    # Simulate long process (e.g., uploading to Supabase, validation, etc.)
+    time.sleep(5)  # ⏳ Replace with actual logic
+
+    # Optionally: save a final copy
+    final_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_final.json")
+    with open(final_path, "w") as f:
+        json.dump(data, f)
+
+    print(f"✅ Final processing done for {car_id}")
+    return {"message": "Processing complete"}
+    
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
