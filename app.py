@@ -259,13 +259,18 @@ def submit_car():
         car_id = content.get("car_id")
         all_data = content.get("data")
 
-        # 📝 You can insert `all_data` into Supabase here
+        # ✅ Step 1: Save or insert data into Supabase (if required)
         print(f"✅ Final reviewed data received for: {car_id}")
-        return jsonify({"status": "✅ Data received and stored!"})
+
+        # ✅ Step 2: Trigger final processing (simulate long task here)
+        result = finalize_processing(car_id, all_data)
+
+        return jsonify({"status": "✅ Final processing complete!", "result": result})
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/get-car/<car_id>")
 def get_car(car_id):
