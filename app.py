@@ -10,7 +10,7 @@ from pathlib import Path
 import traceback
 import re
 import json
-pip install -U sentence-transformers
+from sentence_transformers import SentenceTransformer, util
 
 app = Flask(__name__)
 CORS(app, origins=["https://safesightai.vercel.app"], supports_credentials=True)
