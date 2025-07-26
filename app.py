@@ -10,6 +10,8 @@ from pathlib import Path
 import traceback
 import re
 import json
+
+
 app = Flask(__name__)
 CORS(app, origins=["https://safesightai.vercel.app"], supports_credentials=True)
 
@@ -345,29 +347,40 @@ def clause_mapping(car_id, data):
     return {"mapped": len(df_section_c)}
 
     
-@app.route("/analyze", methods=["POST"])
-def analyze():
+@app.route("/submit-car", methods=["POST"])
+def submit_car():
     try:
-        file = request.files.get("file")
-        car_id = request.form.get("carId", f"CAR-{datetime.utcnow().timestamp()}")
-        if not file:
-            return jsonify({"error": "No file uploaded"}), 400
+        content = request.get_json()
+        car_id = content.get("car_id")
+        all_data = content.get("data")
 
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(UPLOAD_FOLDER, filename)
-        file.save(file_path)
+        print(f"✅ Final reviewed data received for: {car_id}")
 
-        # 🔥 CALL YOUR EXTRACTORS HERE
-        output_path, structured_data, df_a, df_b2 = process_pdf_with_pdfplumber(file_path, car_id)
+        # ✅ Insert each section if data exists
+        for section_key, table_name in {
+            "Section_A": "car_section_a",
+            "Section_B1": "car_section_b1",
+            "Section_B2": "car_section_b2",
+            "Section_C": "car_section_c",
+            "Section_D": "car_section_d",
+            "Section_E1": "car_section_e1",
+            "Section_E2": "car_section_e2"
+        }.items():
+            records = all_data.get(section_key)
+            if records:
+                for record in records:
+                    record["car_id"] = car_id  # Add foreign key
+                supabase.table(table_name).upsert(records).execute()
 
-        # ✅ FIXED INDENTATION HERE
-        with open(os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json"), "w") as f:
-            json.dump(structured_data, f)
+        # ✅ Mark as submitted
+        supabase.table("car_reports").update({
+            "submitted": True
+        }).eq("car_id", car_id).execute()
 
-        return jsonify({
-            "car_id": car_id,
-            "data": structured_data
-        })
+        # ✅ Trigger clause mapping
+        result = clause_mapping(car_id, all_data)
+
+        return jsonify({"status": "✅ Final processing complete!", "result": result})
 
     except Exception as e:
         traceback.print_exc()
