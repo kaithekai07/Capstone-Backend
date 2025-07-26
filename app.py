@@ -96,42 +96,45 @@ def extract_cost_impact(pdf, id_sec_a):
                         b_index += 1
     return pd.DataFrame(cost_rows)
 
+# === ✅ NEW SECTION C (IMPROVED) ===
 def extract_section_c_text(pdf):
     section_c_text = ""
     in_section_c = False
     for page in pdf.pages:
         text = page.extract_text() or ""
-        for line in text.splitlines():
-            upper = line.strip().upper()
-            if "SECTION C" in upper:
+        lines = text.splitlines()
+        for line in lines:
+            upper_line = line.strip().upper()
+            if "SECTION C" in upper_line:
                 in_section_c = True
-            elif "SECTION D" in upper:
+            elif "SECTION D" in upper_line:
                 in_section_c = False
             if in_section_c:
-                section_c_text += line + "\\n"
+                section_c_text += line + "\n"
     return section_c_text.strip()
 
-def extract_answers_after_point(text, id_sec_a):
-    normalized = re.sub(r'\\r\\n|\\r', '\\n', text)
-    blocks = re.split(r'(?:Causal Factor|Root Cause Analysis)[#\\s]*\\d*[:\\-]?\\s*', normalized, flags=re.IGNORECASE)
-    titles = re.findall(r'(?:Causal Factor|Root Cause Analysis)[#\\s]*\\d*[:\\-]?\\s*(.*)', normalized, flags=re.IGNORECASE)
+def extract_answers_after_point(text, id_sec_a, car_no):
+    normalized_text = re.sub(r'\r\n|\r', '\n', text)
+    causal_blocks = re.split(r'(?:Causal Factor|Root Cause Analysis)[#\s]*\d*[:\-]?\s*', normalized_text, flags=re.IGNORECASE)
+    titles = re.findall(r'(?:Causal Factor|Root Cause Analysis)[#\s]*\d*[:\-]?\s*(.*)', normalized_text, flags=re.IGNORECASE)
     final_data = []
     c_index = 1
-    for idx, block in enumerate(blocks[1:]):
+    for idx, block in enumerate(causal_blocks[1:]):
         why_matches = re.findall(
-            r"(WHY\\s?-?\\s?\\d+|Why\\s?-?\\s?\\d+|Why\\d+)\\s*[:\\-–—]?\\s*(.*?)(?=(?:WHY\\s?-?\\s?\\d+|Why\\s?-?\\s?\\d+|Why\\d+)\\s*[:\\-–—]?|$)",
+            r"(WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-–—]?\s*(.*?)(?=(?:WHY\s?-?\s?\d+|Why\s?-?\s?\d+|Why\d+)\s*[:\-–—]?|$)",
             block,
             flags=re.DOTALL | re.IGNORECASE
         )
         for why_raw, answer_raw in why_matches:
             why_text = ' '.join(why_raw.strip().split())
-            answer_clean = answer_raw.strip().replace('\\n', ' ').replace('•', '').strip()
-            bullets = re.findall(r'•\\s*(.*?)\\s*(?=•|$)', answer_clean)
+            answer_clean = answer_raw.strip().replace('\n', ' ').replace('•', '').strip()
+            bullets = re.findall(r'•\s*(.*?)\s*(?=•|$)', answer_clean)
             if not bullets:
                 bullets = [answer_clean]
             for bullet in bullets:
                 final_data.append({
                     "ID NO. SEC A": id_sec_a,
+                    "CAR NO.": car_no,
                     "ID NO. SEC C": str(c_index),
                     "CAUSAL FACTOR": titles[idx].strip() if idx < len(titles) else f"Factor #{idx+1}",
                     "WHY": why_text,
