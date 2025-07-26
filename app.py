@@ -386,29 +386,6 @@ def submit_car():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-@app.route("/submit-car", methods=["POST"])
-def submit_car():
-    try:
-        content = request.get_json()
-        car_id = content.get("car_id")
-        all_data = content.get("data")
-
-        print(f"✅ Final reviewed data received for: {car_id}")
-
-        # ✅ Optional: upload CAR metadata to car_reports
-        supabase.table("car_reports").update({
-            "submitted": True
-        }).eq("car_id", car_id).execute()
-
-        # ✅ Final processing (e.g. clause mapping)
-        result = clause_mapping(car_id, all_data)
-
-        return jsonify({"status": "✅ Final processing complete!", "result": result})
-
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
 
 
 @app.route("/get-car/<car_id>")
