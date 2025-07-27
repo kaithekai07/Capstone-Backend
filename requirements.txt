@@ -6,3 +6,4 @@ pandas
 supabase
 google-cloud-storage
 sentence-transformers
+gunicorn
