@@ -205,7 +205,7 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         df_a = extract_section_a(tables, id_sec_a)
         df_b1 = extract_findings(pdf, id_sec_a)
         df_b2 = extract_cost_impact(pdf, id_sec_a)
-        df_c = extract_answers_after_point(extract_section_c_text(pdf), id_sec_a)
+        df_c = extract_answers_after_point(extract_section_c_text(pdf), id_sec_a, df_a["CAR NO."].iloc[0])
         df_d = extract_corrections(pdf, id_sec_a)
         df_e1 = extract_corrective_action(pdf, id_sec_a)
         df_e2 = extract_conclusion_review(id_sec_a)
