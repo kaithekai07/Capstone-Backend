@@ -404,7 +404,32 @@ def get_car(car_id):
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+
+@app.route("/analyze", methods=["POST"])
+def analyze():
+    try:
+        file = request.files.get("file")
+        car_id = request.form.get("carId") or f"CAR_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        if not file:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        filename = secure_filename(file.filename)
+        filepath = os.path.join("uploads", filename)
+        file.save(filepath)
+
+        output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(filepath, car_id)
+
+        json_path = os.path.join("outputs", f"{car_id}_result.json")
+        with open(json_path, "w") as f:
+            json.dump(extracted_data, f)
+
+        return jsonify({"status": "success", "data": extracted_data})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
