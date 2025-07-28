@@ -281,13 +281,12 @@ def clause_mapping(car_id, data):
         df_section_c["ANSWER"].apply(classify_clause_with_similarity).apply(pd.Series)
     )
 
-    for _, row in df_section_c.iterrows():
-    supabase.table("section_c").update({
-    "Clause Mapped": row["Clause Mapped"],
-    "Cosine Similarity (%)": row["Cosine Similarity (%)"],
-    "Euclidean Distance (%)": row["Euclidean Distance (%)"]
-    }).eq("id_no_sec_c", row["ID NO. SEC C"]).eq("id_no_sec_a", row["ID NO. SEC A"]).execute()
-
+   for _, row in df_section_c.iterrows():
+        supabase.table("car_section_c").update({
+            "Clause Mapped": row["Clause Mapped"],
+            "Cosine Similarity (%)": row["Cosine Similarity (%)"],
+            "Euclidean Distance (%)": row["Euclidean Distance (%)"]
+        }).eq("ID NO. SEC C", row["ID NO. SEC C"]).eq("ID NO. SEC A", row["ID NO. SEC A"]).execute()
 
     return {"mapped": len(df_section_c)}
 
@@ -323,17 +322,15 @@ def submit_car():
                 record_cleaned["car_id"] = car_id
                 cleaned.append(record_cleaned)
 
-            print(f"📥 Inserting {len(cleaned)} rows into {table_name}...")
+            print(f"📅 Inserting {len(cleaned)} rows into {table_name}...")
             try:
                 supabase.table(table_name).upsert(cleaned).execute()
             except Exception as db_error:
                 print(f"❌ Error inserting into {table_name}: {db_error}")
                 traceback.print_exc()
 
-        # ✅ Update report as submitted
         supabase.table("car_reports").update({"submitted": True}).eq("car_id", car_id).execute()
 
-        # ✅ Clause mapping
         result = clause_mapping(car_id, all_data)
 
         return jsonify({"status": "✅ Final processing complete!", "result": result})
