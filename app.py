@@ -268,16 +268,16 @@ def clause_mapping(car_id, data):
     if "Section_C" not in data:
         return {"error": "No Section_C data found."}
     df_section_c = pd.DataFrame(data["Section_C"])
-    if "description" not in df_section_c.columns:
-        return {"error": "Missing 'description' column in Section_C"}
-    df_section_c = df_section_c[df_section_c["description"].notna()].copy()
+    if "ANSWER" not in df_section_c.columns:
+        return {"error": "Missing 'ANSWER' column in Section_C"}
+    df_section_c = df_section_c[df_section_c["ANSWER"].notna()].copy()
 
     df_section_c[["Clause Mapped", "Cosine Similarity (%)", "Euclidean Distance (%)"]] = (
-        df_section_c["description"].apply(classify_clause_with_similarity).apply(pd.Series)
+        df_section_c["ANSWER"].apply(classify_clause_with_similarity).apply(pd.Series)
     )
 
     for _, row in df_section_c.iterrows():
-        supabase.table("section_c").update({
+        supabase.table("car_section_c").update({
             "Clause Mapped": row["Clause Mapped"],
             "Cosine Similarity (%)": row["Cosine Similarity (%)"],
             "Euclidean Distance (%)": row["Euclidean Distance (%)"]
@@ -291,7 +291,6 @@ def submit_car():
         content = request.get_json()
         car_id = content.get("car_id")
         all_data = content.get("data")
-        print(f"✅ Final reviewed data received for: {car_id}")
 
         for section_key, table_name in {
             "Section_A": "car_section_a",
@@ -304,22 +303,12 @@ def submit_car():
         }.items():
             records = all_data.get(section_key, [])
             if not records:
-                print(f"⚠️ Skipping {section_key} - No records")
                 continue
-
             cleaned = []
             for r in records:
-                cleaned.append({
-                    k: ("" if pd.isna(v) else v)
-                    for k, v in r.items()
-                })
+                cleaned.append({k: ("" if pd.isna(v) else v) for k, v in r.items()})
                 cleaned[-1]["car_id"] = car_id
-
-            try:
-                supabase.table(table_name).upsert(cleaned).execute()
-            except Exception as db_error:
-                print(f"❌ Error inserting into {table_name}: {db_error}")
-                traceback.print_exc()
+            supabase.table(table_name).upsert(cleaned).execute()
 
         supabase.table("car_reports").update({"submitted": True}).eq("car_id", car_id).execute()
         result = clause_mapping(car_id, all_data)
