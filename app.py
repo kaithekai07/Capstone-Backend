@@ -292,6 +292,8 @@ def submit_car():
         car_id = content.get("car_id")
         all_data = content.get("data")
 
+        print(f"✅ Final reviewed data received for: {car_id}")
+
         for section_key, table_name in {
             "Section_A": "car_section_a",
             "Section_B1": "car_section_b1",
@@ -303,14 +305,29 @@ def submit_car():
         }.items():
             records = all_data.get(section_key, [])
             if not records:
+                print(f"⚠️ Skipping {section_key} — no records")
                 continue
+
             cleaned = []
             for r in records:
-                cleaned.append({k: ("" if pd.isna(v) else v) for k, v in r.items()})
-                cleaned[-1]["car_id"] = car_id
-            supabase.table(table_name).upsert(cleaned).execute()
+                record_cleaned = {
+                    k: ("" if pd.isna(v) else v)
+                    for k, v in r.items()
+                }
+                record_cleaned["car_id"] = car_id
+                cleaned.append(record_cleaned)
 
+            print(f"📥 Inserting {len(cleaned)} rows into {table_name}...")
+            try:
+                supabase.table(table_name).upsert(cleaned).execute()
+            except Exception as db_error:
+                print(f"❌ Error inserting into {table_name}: {db_error}")
+                traceback.print_exc()
+
+        # ✅ Update report as submitted
         supabase.table("car_reports").update({"submitted": True}).eq("car_id", car_id).execute()
+
+        # ✅ Clause mapping
         result = clause_mapping(car_id, all_data)
 
         return jsonify({"status": "✅ Final processing complete!", "result": result})
