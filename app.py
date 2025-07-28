@@ -423,7 +423,23 @@ def analyze():
         with open(json_path, "w") as f:
             json.dump(extracted_data, f)
 
-        return jsonify({"status": "success", "data": extracted_data})
+# Ensure all expected keys exist in the response
+default_sections = {
+    "Section_A": [],
+    "Section_B1": [],
+    "Section_B2": [],
+    "Section_C": [],
+    "Section_D": [],
+    "Section_E1": [],
+    "Section_E2": []
+}
+# Fill in missing sections with empty lists
+for key in default_sections:
+    if key not in extracted_data:
+        extracted_data[key] = []
+
+return jsonify({"status": "success", "data": extracted_data})
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
