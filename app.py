@@ -277,16 +277,16 @@ def clause_mapping(car_id, data):
         return {"error": "Missing 'ANSWER' column in Section_C"}
     df_section_c = df_section_c[df_section_c["ANSWER"].notna()].copy()
 
-    df_section_c[["Clause Mapped", "Cosine Similarity (%)", "Euclidean Distance (%)"]] = (
-        df_section_c["ANSWER"].apply(classify_clause_with_similarity).apply(pd.Series)
+    df_section_c["Clause Mapped"], df_section_c["Cosine Similarity (%)"], df_section_c["Euclidean Distance (%)"] = zip(*
+        df_section_c["ANSWER"].apply(classify_clause_with_similarity)
     )
 
-   for _, row in df_section_c.iterrows():
-        supabase.table("car_section_c").update({
+    for _, row in df_section_c.iterrows():
+        supabase.table("section_c").update({
             "Clause Mapped": row["Clause Mapped"],
             "Cosine Similarity (%)": row["Cosine Similarity (%)"],
             "Euclidean Distance (%)": row["Euclidean Distance (%)"]
-        }).eq("ID NO. SEC C", row["ID NO. SEC C"]).eq("ID NO. SEC A", row["ID NO. SEC A"]).execute()
+        }).eq("id_no_sec_c", row["ID NO. SEC C"]).eq("id_no_sec_a", row["ID NO. SEC A"]).execute()
 
     return {"mapped": len(df_section_c)}
 
