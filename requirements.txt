@@ -1,9 +1,12 @@
 flask
 flask-cors
 pdfplumber
-openpyxl
 pandas
-supabase
-google-cloud-storage
+openpyxl
+numpy
 sentence-transformers
-gunicorn
+supabase
+rapidfuzz
+python-dotenv
+Werkzeug
+pydantic
