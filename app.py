@@ -282,11 +282,12 @@ def clause_mapping(car_id, data):
     )
 
     for _, row in df_section_c.iterrows():
-        supabase.table("car_section_c").update({
-            "Clause Mapped": row["Clause Mapped"],
-            "Cosine Similarity (%)": row["Cosine Similarity (%)"],
-            "Euclidean Distance (%)": row["Euclidean Distance (%)"]
-        }).eq("ID NO. SEC C", row["ID NO. SEC C"]).eq("ID NO. SEC A", row["ID NO. SEC A"]).execute()
+    supabase.table("section_c").update({
+    "Clause Mapped": row["Clause Mapped"],
+    "Cosine Similarity (%)": row["Cosine Similarity (%)"],
+    "Euclidean Distance (%)": row["Euclidean Distance (%)"]
+    }).eq("id_no_sec_c", row["ID NO. SEC C"]).eq("id_no_sec_a", row["ID NO. SEC A"]).execute()
+
 
     return {"mapped": len(df_section_c)}
 
