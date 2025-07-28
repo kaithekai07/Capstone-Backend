@@ -3,15 +3,18 @@ from flask_cors import CORS
 import os
 import pdfplumber
 import pandas as pd
-from datetime import datetime
-from werkzeug.utils import secure_filename
-from supabase import create_client
-from pathlib import Path
-import traceback
+import numpy as np
 import re
 import json
+import traceback
+from datetime import datetime
+from werkzeug.utils import secure_filename
+from pathlib import Path
+from supabase import create_client
 from sentence_transformers import SentenceTransformer, util
 from collections import Counter
+from rapidfuzz import fuzz
+
 
 
 app = Flask(__name__)
