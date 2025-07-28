@@ -374,6 +374,18 @@ def analyze():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route("/submit-car-status/<car_id>")
+def submit_car_status(car_id):
+    try:
+        result = supabase.table("car_reports").select("submitted").eq("car_id", car_id).execute()
+        if result.data:
+            return jsonify({"submitted": result.data[0]["submitted"]})
+        else:
+            return jsonify({"submitted": False}), 404
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+        
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
