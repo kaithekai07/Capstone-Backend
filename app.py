@@ -11,6 +11,8 @@ import traceback
 import re
 import json
 from sentence_transformers import SentenceTransformer, util
+from collections import Counter
+
 
 app = Flask(__name__)
 CORS(app, origins=["https://safesightai.vercel.app"], supports_credentials=True)
