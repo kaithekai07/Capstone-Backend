@@ -335,17 +335,24 @@ def submit_car():
             section_key_normalized = section_key.lower()
             update_payload[section_key_normalized] = cleaned
             print(f"📦 Prepared JSONB payload for {section_key_normalized} with {len(cleaned)} records")
-existing = supabase.table("car_reports").select("car_id").eq("car_id", car_id).execute()
-if not existing.data:
-    supabase.table("car_reports").insert({"car_id": car_id}).execute()
+
+        # ✅ Check if the car_id exists before updating
+        existing = supabase.table("car_reports").select("car_id").eq("car_id", car_id).execute()
+        if not existing.data:
+            supabase.table("car_reports").insert({"car_id": car_id}).execute()
+
+        # ✅ Now update the row
         supabase.table("car_reports").update(update_payload).eq("car_id", car_id).execute()
 
+        # Run clause mapping (adds to Section_C inside update_payload already)
         result = clause_mapping(car_id, all_data)
 
         return jsonify({"status": "✅ Final processing complete!", "result": result})
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/")
 def health():
