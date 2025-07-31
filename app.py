@@ -290,6 +290,13 @@ def clause_mapping(car_id, data):
 
     return {"mapped": len(df_section_c)}
 
+def normalize_keys(record):
+    return {
+        k.lower().replace(" ", "_").replace(".", "").replace("-", "").replace("__", "_"): v
+        for k, v in record.items()
+    }
+
+
 @app.route("/submit-car", methods=["POST"])
 def submit_car():
     try:
@@ -313,7 +320,6 @@ def submit_car():
                 print(f"⚠️ Skipping {section_key} — no records")
                 continue
 
-            print(f"🧪 Raw record keys for {section_key}: {records[0].keys() if records else 'None'}")
             cleaned = []
             for r in records:
                 record_cleaned = {
@@ -321,26 +327,24 @@ def submit_car():
                     for k, v in r.items()
                 }
                 record_cleaned["car_id"] = car_id
-                cleaned.append(record_cleaned)
+                cleaned.append(normalize_keys(record_cleaned))
 
             print(f"📅 Inserting {len(cleaned)} rows into {table_name}...")
-            print(f"🔍 Cleaned sample: {cleaned[0] if cleaned else 'Empty'}")
             try:
                 supabase.table(table_name).upsert(cleaned).execute()
             except Exception as db_error:
                 print(f"❌ Error inserting into {table_name}: {db_error}")
                 traceback.print_exc()
 
-        print("🧠 Running clause mapping...")
-        result = clause_mapping(car_id, all_data)
-
-        print(f"✅ Clause mapping result: {result}")
         supabase.table("car_reports").update({"submitted": True}).eq("car_id", car_id).execute()
+
+        result = clause_mapping(car_id, all_data)
 
         return jsonify({"status": "✅ Final processing complete!", "result": result})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/get-car/<car_id>")
 def get_car(car_id):
