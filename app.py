@@ -234,61 +234,6 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         "Section_E2": df_e2.to_dict(orient="records")
     }, df_a, df_b2
 
-def clause_mapping(car_id, data):
-    clause_ref = pd.read_excel("ISO45001_Master_Data_Refined_Final_Clause8.xlsx")
-    clause_ref["Clause Number"] = clause_ref["Clause Number"].astype(str)
-    clause_ref.dropna(subset=["Clause Detail"], inplace=True)
-    clause_descriptions = dict(zip(clause_ref["Clause Number"], clause_ref["Clause Detail"]))
-    clause_ids, clause_texts = zip(*clause_descriptions.items())
-    model = SentenceTransformer("all-mpnet-base-v2")
-    clause_embeddings = model.encode(list(clause_texts), convert_to_tensor=True)
-
-    def classify_clause_with_similarity(text):
-        scores = Counter()
-        text = str(text).lower()
-        query_emb = model.encode(text, convert_to_tensor=True)
-        cos_scores = util.pytorch_cos_sim(query_emb, clause_embeddings)[0].cpu().numpy()
-        scores.update({cid: score for cid, score in zip(clause_ids, cos_scores)})
-        for pattern, clause_list in [
-            (r"\bpump|valve|equipment|maintenance|checklist\b", ["8.1.2"]),
-            (r"\bcommunication|handover|supervisor|team\b", ["8.1.4"]),
-            (r"\bsuction|operation|not operating|status|protocol\b", ["8.1.1"]),
-            (r"\bsit\b", ["8.1.3"]),
-        ]:
-            if re.search(pattern, text):
-                scores.update({c: 0.1 for c in clause_list})
-        for cid, desc in clause_descriptions.items():
-            fuzz_score = fuzz.token_sort_ratio(text, desc)
-            if fuzz_score >= 70:
-                scores[cid] += fuzz_score / 100 * 0.5
-        if not scores:
-            return "8.1.1", 0.0, 100.0
-        top_clause = max(scores.items(), key=lambda x: x[1])[0]
-        top_clause_text = clause_descriptions[top_clause]
-        top_emb = model.encode(top_clause_text, convert_to_tensor=True)
-        cosine_sim = float(util.pytorch_cos_sim(query_emb, top_emb)[0][0]) * 100
-        euclidean_dist = float(np.linalg.norm(query_emb.cpu().numpy() - top_emb.cpu().numpy()))
-        return top_clause, round(cosine_sim, 2), round(euclidean_dist * 100 / np.sqrt(len(query_emb)), 2)
-
-    if "Section_C" not in data:
-        return {"error": "No Section_C data found."}
-    df_section_c = pd.DataFrame(data["Section_C"])
-    if "ANSWER" not in df_section_c.columns:
-        return {"error": "Missing 'ANSWER' column in Section_C"}
-    df_section_c = df_section_c[df_section_c["ANSWER"].notna()].copy()
-
-    df_section_c["Clause Mapped"], df_section_c["Cosine Similarity (%)"], df_section_c["Euclidean Distance (%)"] = zip(*
-        df_section_c["ANSWER"].apply(classify_clause_with_similarity)
-    )
-
-    for _, row in df_section_c.iterrows():
-        supabase.table("section_c").update({
-            "Clause Mapped": row["Clause Mapped"],
-            "Cosine Similarity (%)": row["Cosine Similarity (%)"],
-            "Euclidean Distance (%)": row["Euclidean Distance (%)"]
-        }).eq("id_no_sec_c", row["ID NO. SEC C"]).eq("id_no_sec_a", row["ID NO. SEC A"]).execute()
-
-    return {"mapped": len(df_section_c)}
 
 def normalize_keys(record):
     return {
