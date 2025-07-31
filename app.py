@@ -313,6 +313,7 @@ def submit_car():
                 print(f"⚠️ Skipping {section_key} — no records")
                 continue
 
+            print(f"🧪 Raw record keys for {section_key}: {records[0].keys() if records else 'None'}")
             cleaned = []
             for r in records:
                 record_cleaned = {
@@ -323,15 +324,18 @@ def submit_car():
                 cleaned.append(record_cleaned)
 
             print(f"📅 Inserting {len(cleaned)} rows into {table_name}...")
+            print(f"🔍 Cleaned sample: {cleaned[0] if cleaned else 'Empty'}")
             try:
                 supabase.table(table_name).upsert(cleaned).execute()
             except Exception as db_error:
                 print(f"❌ Error inserting into {table_name}: {db_error}")
                 traceback.print_exc()
 
-        supabase.table("car_reports").update({"submitted": True}).eq("car_id", car_id).execute()
-
+        print("🧠 Running clause mapping...")
         result = clause_mapping(car_id, all_data)
+
+        print(f"✅ Clause mapping result: {result}")
+        supabase.table("car_reports").update({"submitted": True}).eq("car_id", car_id).execute()
 
         return jsonify({"status": "✅ Final processing complete!", "result": result})
     except Exception as e:
