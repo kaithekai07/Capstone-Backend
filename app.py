@@ -367,15 +367,17 @@ def submit_car():
 
         print(f"✅ Final reviewed data received for: {car_id}")
 
-        for section_key, table_name in {
-            "Section_A": "car_section_a",
-            "Section_B1": "car_section_b1",
-            "Section_B2": "car_section_b2",
-            "Section_C": "car_section_c",
-            "Section_D": "car_section_d",
-            "Section_E1": "car_section_e1",
-            "Section_E2": "car_section_e2"
-        }.items():
+        update_payload = {"submitted": True}
+
+        for section_key in [
+            "Section_A",
+            "Section_B1",
+            "Section_B2",
+            "Section_C",
+            "Section_D",
+            "Section_E1",
+            "Section_E2"
+        ]:
             records = all_data.get(section_key, [])
             if not records:
                 print(f"⚠️ Skipping {section_key} — no records")
@@ -384,17 +386,14 @@ def submit_car():
             cleaned = []
             for r in records:
                 record_cleaned = {k: ("" if pd.isna(v) else v) for k, v in r.items()}
-                record_cleaned["car_id"] = car_id
                 cleaned.append(normalize_keys(record_cleaned))
 
-            print(f"📅 Inserting {len(cleaned)} rows into {table_name}...")
-            try:
-                supabase.table(table_name).upsert(cleaned).execute()
-            except Exception as db_error:
-                print(f"❌ Error inserting into {table_name}: {db_error}")
-                traceback.print_exc()
+            section_key_normalized = section_key.lower()
+            update_payload[section_key_normalized] = cleaned
+            print(f"📦 Prepared JSONB payload for {section_key_normalized} with {len(cleaned)} records")
 
-        supabase.table("car_reports").update({"submitted": True}).eq("car_id", car_id).execute()
+        supabase.table("car_reports").update(update_payload).eq("car_id", car_id).execute()
+
         result = clause_mapping(car_id, all_data)
 
         return jsonify({"status": "✅ Final processing complete!", "result": result})
