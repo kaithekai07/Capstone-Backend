@@ -281,6 +281,7 @@ def clause_mapping(car_id, data):
         euclidean_dist = float(np.linalg.norm(query_emb.cpu().numpy() - top_emb.cpu().numpy()))
         return top_clause, round(cosine_sim, 2), round(euclidean_dist * 100 / np.sqrt(len(query_emb)), 2)
 
+    # If Section_C is not present or has no answers
     if "Section_C" not in data:
         return {"error": "No Section_C data found."}
 
@@ -290,18 +291,16 @@ def clause_mapping(car_id, data):
 
     df_section_c = df_section_c[df_section_c["ANSWER"].notna()].copy()
 
-    df_section_c["Clause Mapped"], df_section_c["Cosine Similarity (%)"], df_section_c["Euclidean Distance (%)"] = zip(
+    # 🔁 Add clause mapping columns directly into Section_C
+    df_section_c["clause_mapped"], df_section_c["cosine_similarity_%"], df_section_c["euclidean_distance_%"] = zip(
         *df_section_c["ANSWER"].apply(classify_clause_with_similarity)
     )
 
-    for _, row in df_section_c.iterrows():
-        supabase.table("section_c").update({
-            "clause_mapped": row["Clause Mapped"],
-            "cosine_similarity_%": row["Cosine Similarity (%)"],
-            "euclidean_distance_%": row["Euclidean Distance (%)"]
-        }).eq("id_no_sec_c", row["ID NO. SEC C"]).eq("id_no_sec_a", row["ID NO. SEC A"]).execute()
+    # 🧠 Update the data dict so submit_car will push this to car_reports.section_c
+    data["Section_C"] = df_section_c.to_dict(orient="records")
 
     return {"mapped": len(df_section_c)}
+
 
 @app.route("/submit-car", methods=["POST"])
 def submit_car():
