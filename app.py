@@ -346,6 +346,48 @@ def submit_car():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route("/")
+def health():
+    return jsonify({"status": "✅ Backend is live"}), 200
+
+
+@app.route("/analyze", methods=["POST"])
+def analyze():
+    try:
+        file = request.files.get("file")
+        car_id = request.form.get("carId") or f"CAR_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        if not file:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(filepath)
+
+        output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(filepath, car_id)
+
+        json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
+        with open(json_path, "w") as f:
+            json.dump(extracted_data, f)
+
+        return jsonify({"status": "success", "data": extracted_data})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/submit-car-status/<car_id>")
+def submit_car_status(car_id):
+    try:
+        result = supabase.table("car_reports").select("submitted").eq("car_id", car_id).execute()
+        if result.data:
+            return jsonify({"submitted": result.data[0]["submitted"]})
+        else:
+            return jsonify({"submitted": False}), 404
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 10000))  # 🔧 Use the correct Render port
     app.run(host="0.0.0.0", port=port)
