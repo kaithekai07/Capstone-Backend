@@ -335,7 +335,9 @@ def submit_car():
             section_key_normalized = section_key.lower()
             update_payload[section_key_normalized] = cleaned
             print(f"📦 Prepared JSONB payload for {section_key_normalized} with {len(cleaned)} records")
-
+existing = supabase.table("car_reports").select("car_id").eq("car_id", car_id).execute()
+if not existing.data:
+    supabase.table("car_reports").insert({"car_id": car_id}).execute()
         supabase.table("car_reports").update(update_payload).eq("car_id", car_id).execute()
 
         result = clause_mapping(car_id, all_data)
