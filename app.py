@@ -369,7 +369,7 @@ def submit_car():
                 })
 
             if enriched_records:
-                supabase.table("clause_mapped_issues").insert(enriched_records).execute()
+                supabase.table("clause_mapped_tzble").insert(enriched_records).execute()
                 print(f"📤 Inserted {len(enriched_records)} mapped issues into clause_mapped_issues")
         except Exception as insert_err:
             print(f"⚠️ Failed to insert into clause_mapped_table: {insert_err}")
