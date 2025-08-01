@@ -347,31 +347,32 @@ def submit_car():
         # Run clause mapping (adds to Section_C inside update_payload already)
         result = clause_mapping(car_id, all_data)
         # ✅ OPTIONAL: Push clause-mapped results into a flat analytics table
+               # ✅ OPTIONAL: Push clause-mapped results into a flat analytics table
         try:
             section_c_records = all_data.get("Section_C", [])
             section_a = all_data.get("Section_A", [{}])[0]
             enriched_records = []
 
-        for record in section_c_records:
+            for record in section_c_records:
                 enriched_records.append({
                     "car_id": car_id,
-                "car_no": record.get("CAR NO."),
-                "client": section_a.get("CLIENT"),
-                "location": section_a.get("LOCATION"),
-                "id_no_sec_c": record.get("ID NO. SEC C"),
-                "causal_factor": record.get("CAUSAL FACTOR"),
-                "why": record.get("WHY"),
-                "answer": record.get("ANSWER"),
-                "clause_mapped": record.get("clause_mapped"),
-                "cosine_similarity_%": record.get("cosine_similarity_%"),
-                "euclidean_distance_%": record.get("euclidean_distance_%")
-        })
+                    "car_no": record.get("CAR NO."),
+                    "client": section_a.get("CLIENT"),
+                    "location": section_a.get("LOCATION"),
+                    "id_no_sec_c": record.get("ID NO. SEC C"),
+                    "causal_factor": record.get("CAUSAL FACTOR"),
+                    "why": record.get("WHY"),
+                    "answer": record.get("ANSWER"),
+                    "clause_mapped": record.get("clause_mapped"),
+                    "cosine_similarity_%": record.get("cosine_similarity_%"),
+                    "euclidean_distance_%": record.get("euclidean_distance_%")
+                })
 
-    if enriched_records:
-        supabase.table("clause_mapped_issues").insert(enriched_records).execute()
-        print(f"📤 Inserted {len(enriched_records)} mapped issues into clause_mapped_issues")
-except Exception as insert_err:
-    print(f"⚠️ Failed to insert into clause_mapped_issues: {insert_err}")
+            if enriched_records:
+                supabase.table("clause_mapped_issues").insert(enriched_records).execute()
+                print(f"📤 Inserted {len(enriched_records)} mapped issues into clause_mapped_issues")
+        except Exception as insert_err:
+            print(f"⚠️ Failed to insert into clause_mapped_issues: {insert_err}")
 
         return jsonify({"status": "✅ Final processing complete!", "result": result})
 
