@@ -389,25 +389,36 @@ def health():
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
-        file = request.files.get("file")
-        car_id = request.form.get("carId") or f"CAR_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        if not file:
-            return jsonify({"error": "No file uploaded"}), 400
+        files = request.files.getlist("file")
+        results = []
 
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(UPLOAD_FOLDER, filename)
-        file.save(filepath)
+        if not files:
+            return jsonify({"error": "No files uploaded"}), 400
 
-        output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(filepath, car_id)
+        for file in files:
+            car_id = request.form.get("carId") or f"CAR_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(filepath)
 
-        json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
-        with open(json_path, "w") as f:
-            json.dump(extracted_data, f)
+            output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(filepath, car_id)
 
-        return jsonify({"status": "success", "data": extracted_data})
+            json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
+            with open(json_path, "w") as f:
+                json.dump(extracted_data, f)
+
+            results.append({
+                "car_id": car_id,
+                "filename": filename,
+                "data": extracted_data
+            })
+
+        return jsonify({"status": "success", "results": results})
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 
 @app.route("/submit-car-status/<car_id>")
