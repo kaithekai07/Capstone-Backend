@@ -358,10 +358,45 @@ def submit_car():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-@app.route("/")
-def health():
-    return jsonify({"status": "✅ Backend is live"}), 200
 
+@app.route("/analyze", methods=["POST"])
+def analyze():
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file part in the request"}), 400
+
+        files = request.files.getlist("file")
+        results = []
+
+        if not files:
+            return jsonify({"error": "No files uploaded"}), 400
+
+        for file in files:
+            if file.filename == '':
+                continue  # skip empty filenames
+
+            car_id = request.form.get("carId") or f"CAR_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(filepath)
+
+            output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(filepath, car_id)
+
+            json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
+            with open(json_path, "w") as f:
+                json.dump(extracted_data, f)
+
+            results.append({
+                "car_id": car_id,
+                "filename": filename,
+                "data": extracted_data
+            })
+
+        return jsonify({"status": "success", "results": results})
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/submit-car-status/<car_id>")
@@ -377,6 +412,11 @@ def submit_car_status(car_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/")
+def health():
+    return jsonify({"status": "✅ Backend is live"}), 200
+
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))  # 🔧 Use the correct Render port
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
