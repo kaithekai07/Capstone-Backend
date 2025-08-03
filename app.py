@@ -359,8 +359,8 @@ def submit_car():
                     "why": record.get("WHY"),
                     "answer": record.get("ANSWER"),
                     "clause_mapped": record.get("clause_mapped"),
-                    "cosine_similarity": record.get("cosine_similari"),  # typo in key name earlier
-                    "euclidean_distance": record.get("euclidean_dist")
+                    "cosine_similarity_%": record.get("cosine_similari"),  # typo in key name earlier
+                    "euclidean_distance_%": record.get("euclidean_dist")
 
                 })
 
