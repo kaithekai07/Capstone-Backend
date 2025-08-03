@@ -290,14 +290,13 @@ def clause_mapping(car_id, data):
 
     df_section_c = df_section_c[df_section_c["ANSWER"].notna()].copy()
 
-    df_section_c["clause_mapped"], df_section_c["cosine_similari"], df_section_c["euclidean_dist"] = zip(
+    df_section_c["clause_mapped"], df_section_c["cosine_similarity_%"], df_section_c["euclidean_distance_%"] = zip(
         *df_section_c["ANSWER"].apply(classify_clause_with_similarity)
     )
 
     data["Section_C"] = df_section_c.to_dict(orient="records")
 
     return {"mapped": len(df_section_c)}
-
 
 @app.route("/submit-car", methods=["POST"])
 def submit_car():
@@ -306,48 +305,32 @@ def submit_car():
         car_id = content.get("car_id")
         all_data = content.get("data")
 
-        print(f"✅ Final reviewed data received for: {car_id}")
+        print(f"\n✅ Final reviewed data received for: {car_id}")
 
         update_payload = {"submitted": True}
 
         for section_key in [
-            "Section_A",
-            "Section_B1",
-            "Section_B2",
-            "Section_C",
-            "Section_D",
-            "Section_E1",
-            "Section_E2"
+            "Section_A", "Section_B1", "Section_B2", "Section_C", "Section_D", "Section_E1", "Section_E2"
         ]:
             records = all_data.get(section_key, [])
             if not records:
                 print(f"⚠️ Skipping {section_key} — no records")
                 continue
+            cleaned = [normalize_keys({k: (None if pd.isna(v) else v) for k, v in r.items()}) for r in records]
+            update_payload[section_key.lower()] = cleaned
 
-            cleaned = []
-            for r in records:
-                record_cleaned = {k: (None if pd.isna(v) else v) for k, v in r.items()}
-                cleaned.append(normalize_keys(record_cleaned))
-
-            section_key_normalized = section_key.lower()
-            update_payload[section_key_normalized] = cleaned
-            print(f"📦 Prepared JSONB payload for {section_key_normalized} with {len(cleaned)} records")
-
-        # ✅ Check if the car_id exists before updating
         existing = supabase.table("car_reports").select("car_id").eq("car_id", car_id).execute()
         if not existing.data:
             supabase.table("car_reports").insert({"car_id": car_id}).execute()
 
-        # ✅ Now update the row
         supabase.table("car_reports").update(update_payload).eq("car_id", car_id).execute()
 
-        # Run clause mapping (adds to Section_C inside update_payload already)
         result = clause_mapping(car_id, all_data)
+
         try:
             section_c_records = all_data.get("Section_C", [])
             section_a = all_data.get("Section_A", [{}])[0]
             enriched_records = []
-
             for record in section_c_records:
                 enriched_records.append({
                     "car_id": car_id,
@@ -359,16 +342,15 @@ def submit_car():
                     "why": record.get("WHY"),
                     "answer": record.get("ANSWER"),
                     "clause_mapped": record.get("clause_mapped"),
-                    "cosine_similarity_%": record.get("cosine_similari"),  # typo in key name earlier
-                    "euclidean_distance_%": record.get("euclidean_dist")
-
+                    "cosine_similarity_%": record.get("cosine_similarity_%"),
+                    "euclidean_distance_%": record.get("euclidean_distance_%")
                 })
 
             if enriched_records:
-                result = supabase.table("clause_mapped_table").insert(enriched_records).execute()
-                print("📤 Supabase insert result:", result)
+                supabase.table("clause_mapped_table").insert(enriched_records).execute()
+                print(f"📤 Inserted {len(enriched_records)} clause mappings")
         except Exception as insert_err:
-            print(f"⚠️ Failed to insert into clause_mapped_table: {insert_err}")
+            print(f"⚠️ Insert error in clause_mapped_table: {insert_err}")
 
         return jsonify({"status": "✅ Final processing complete!", "result": result})
 
@@ -376,44 +358,9 @@ def submit_car():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-
 @app.route("/")
 def health():
     return jsonify({"status": "✅ Backend is live"}), 200
-
-
-@app.route("/analyze", methods=["POST"])
-def analyze():
-    try:
-        files = request.files.getlist("file")
-        results = []
-
-        if not files:
-            return jsonify({"error": "No files uploaded"}), 400
-
-        for file in files:
-            car_id = request.form.get("carId") or f"CAR_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
-            file.save(filepath)
-
-            output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(filepath, car_id)
-
-            json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
-            with open(json_path, "w") as f:
-                json.dump(extracted_data, f)
-
-            results.append({
-                "car_id": car_id,
-                "filename": filename,
-                "data": extracted_data
-            })
-
-        return jsonify({"status": "success", "results": results})
-
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
 
 
 
