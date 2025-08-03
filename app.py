@@ -281,7 +281,6 @@ def clause_mapping(car_id, data):
         euclidean_dist = float(np.linalg.norm(query_emb.cpu().numpy() - top_emb.cpu().numpy()))
         return top_clause, round(cosine_sim, 2), round(euclidean_dist * 100 / np.sqrt(len(query_emb)), 2)
 
-    # If Section_C is not present or has no answers
     if "Section_C" not in data:
         return {"error": "No Section_C data found."}
 
@@ -291,12 +290,10 @@ def clause_mapping(car_id, data):
 
     df_section_c = df_section_c[df_section_c["ANSWER"].notna()].copy()
 
-    # 🔁 Add clause mapping columns directly into Section_C
-    df_section_c["clause_mapped"], df_section_c["cosine_similarity_%"], df_section_c["euclidean_distance_%"] = zip(
+    df_section_c["clause_mapped"], df_section_c["cosine_similari"], df_section_c["euclidean_dist"] = zip(
         *df_section_c["ANSWER"].apply(classify_clause_with_similarity)
     )
 
-    # 🧠 Update the data dict so submit_car will push this to car_reports.section_c
     data["Section_C"] = df_section_c.to_dict(orient="records")
 
     return {"mapped": len(df_section_c)}
@@ -346,8 +343,6 @@ def submit_car():
 
         # Run clause mapping (adds to Section_C inside update_payload already)
         result = clause_mapping(car_id, all_data)
-        # ✅ OPTIONAL: Push clause-mapped results into a flat analytics table
-               # ✅ OPTIONAL: Push clause-mapped results into a flat analytics table
         try:
             section_c_records = all_data.get("Section_C", [])
             section_a = all_data.get("Section_A", [{}])[0]
@@ -364,13 +359,13 @@ def submit_car():
                     "why": record.get("WHY"),
                     "answer": record.get("ANSWER"),
                     "clause_mapped": record.get("clause_mapped"),
-                    "cosine_similarity_%": record.get("cosine_similarity_%"),
-                    "euclidean_distance_%": record.get("euclidean_distance_%")
+                    "cosine_similari": record.get("cosine_similari"),
+                    "euclidean_dist": record.get("euclidean_dist")
                 })
 
             if enriched_records:
-                supabase.table("clause_mapped_table").insert(enriched_records).execute()
-                print(f"📤 Inserted {len(enriched_records)} mapped issues into clause_mapped_issues")
+                result = supabase.table("clause_mapped_table").insert(enriched_records).execute()
+                print("📤 Supabase insert result:", result)
         except Exception as insert_err:
             print(f"⚠️ Failed to insert into clause_mapped_table: {insert_err}")
 
