@@ -242,7 +242,8 @@ def normalize_keys(record):
     }
 
 def clause_mapping(car_id, data):
-    clause_ref = pd.read_excel("ISO45001_Master_Data_Refined_Final_Clause8.xlsx")
+    clause_file_path = os.path.join(os.path.dirname(__file__), "ISO45001_Master_Data_Refined_Final_Clause8.xlsx")
+    clause_ref = pd.read_excel(clause_file_path)
     clause_ref["Clause Number"] = clause_ref["Clause Number"].astype(str)
     clause_ref.dropna(subset=["Clause Detail"], inplace=True)
     clause_descriptions = dict(zip(clause_ref["Clause Number"], clause_ref["Clause Detail"]))
@@ -290,7 +291,7 @@ def clause_mapping(car_id, data):
 
     df_section_c = df_section_c[df_section_c["ANSWER"].notna()].copy()
 
-    df_section_c["clause_mapped"], df_section_c["cosine_similarity_%"], df_section_c["euclidean_distance_%"] = zip(
+    df_section_c["clause_mapped"], df_section_c["cosine_similarity"], df_section_c["euclidean_dist"] = zip(
         *df_section_c["ANSWER"].apply(classify_clause_with_similarity)
     )
 
