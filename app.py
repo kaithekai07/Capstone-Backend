@@ -242,12 +242,12 @@ def normalize_keys(record):
     }
 
 def clause_mapping(car_id, data):
-    clause_file_path = os.path.join(os.path.dirname(__file__), "ISO45001_Master_Data_Refined_Final_Clause8.xlsx")
-    clause_ref = pd.read_excel(clause_file_path)
+    clause_ref = pd.read_excel("ISO45001_Master_Data_Refined_Final_Clause8.xlsx")
     clause_ref["Clause Number"] = clause_ref["Clause Number"].astype(str)
     clause_ref.dropna(subset=["Clause Detail"], inplace=True)
     clause_descriptions = dict(zip(clause_ref["Clause Number"], clause_ref["Clause Detail"]))
     clause_ids, clause_texts = zip(*clause_descriptions.items())
+
     model = SentenceTransformer("all-mpnet-base-v2")
     clause_embeddings = model.encode(list(clause_texts), convert_to_tensor=True)
 
@@ -258,6 +258,7 @@ def clause_mapping(car_id, data):
         cos_scores = util.pytorch_cos_sim(query_emb, clause_embeddings)[0].cpu().numpy()
         scores.update({cid: score for cid, score in zip(clause_ids, cos_scores)})
 
+        # Pattern-based rule boosting
         for pattern, clause_list in [
             (r"\bpump|valve|equipment|maintenance|checklist\b", ["8.1.2"]),
             (r"\bcommunication|handover|supervisor|team\b", ["8.1.4"]),
@@ -267,11 +268,13 @@ def clause_mapping(car_id, data):
             if re.search(pattern, text):
                 scores.update({c: 0.1 for c in clause_list})
 
+        # Fuzzy bonus
         for cid, desc in clause_descriptions.items():
             fuzz_score = fuzz.token_sort_ratio(text, desc)
             if fuzz_score >= 70:
                 scores[cid] += fuzz_score / 100 * 0.5
 
+        # Final selection
         if not scores:
             return "8.1.1", 0.0, 100.0
 
@@ -286,18 +289,19 @@ def clause_mapping(car_id, data):
         return {"error": "No Section_C data found."}
 
     df_section_c = pd.DataFrame(data["Section_C"])
+
     if "ANSWER" not in df_section_c.columns:
         return {"error": "Missing 'ANSWER' column in Section_C"}
 
     df_section_c = df_section_c[df_section_c["ANSWER"].notna()].copy()
 
-    df_section_c["clause_mapped"], df_section_c["cosine_similarity"], df_section_c["euclidean_dist"] = zip(
+    df_section_c["clause_mapped"], df_section_c["cosine_similarity_%"], df_section_c["euclidean_distance_%"] = zip(
         *df_section_c["ANSWER"].apply(classify_clause_with_similarity)
     )
 
     data["Section_C"] = df_section_c.to_dict(orient="records")
-
     return {"mapped": len(df_section_c)}
+
 
 @app.route("/submit-car", methods=["POST"])
 def submit_car():
@@ -308,8 +312,10 @@ def submit_car():
 
         print(f"\n✅ Final reviewed data received for: {car_id}")
 
-        update_payload = {"submitted": True}
+        # 🔁 Run clause mapping FIRST — uses "ANSWER" from original data
+        result = clause_mapping(car_id, all_data)
 
+        update_payload = {"submitted": True}
         for section_key in [
             "Section_A", "Section_B1", "Section_B2", "Section_C", "Section_D", "Section_E1", "Section_E2"
         ]:
@@ -326,8 +332,7 @@ def submit_car():
 
         supabase.table("car_reports").update(update_payload).eq("car_id", car_id).execute()
 
-        result = clause_mapping(car_id, all_data)
-
+        # 🔁 Push clause-mapped analytics
         try:
             section_c_records = all_data.get("Section_C", [])
             section_a = all_data.get("Section_A", [{}])[0]
