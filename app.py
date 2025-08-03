@@ -359,8 +359,9 @@ def submit_car():
                     "why": record.get("WHY"),
                     "answer": record.get("ANSWER"),
                     "clause_mapped": record.get("clause_mapped"),
-                    "cosine_similari": record.get("cosine_similari"),
-                    "euclidean_dist": record.get("euclidean_dist")
+                    "cosine_similarity": record.get("cosine_similari"),  # typo in key name earlier
+                    "euclidean_distance": record.get("euclidean_dist")
+
                 })
 
             if enriched_records:
