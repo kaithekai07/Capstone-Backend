@@ -303,68 +303,6 @@ def clause_mapping(car_id, data):
     return {"mapped": len(df_section_c)}
 
 
-@app.route("/submit-car", methods=["POST"])
-def submit_car():
-    try:
-        content = request.get_json()
-        car_id = content.get("car_id")
-        all_data = content.get("data")
-
-        print(f"\n✅ Final reviewed data received for: {car_id}")
-
-        # 🔁 Run clause mapping FIRST — uses "ANSWER" from original data
-        result = clause_mapping(car_id, all_data)
-
-        update_payload = {"submitted": True}
-        for section_key in [
-            "Section_A", "Section_B1", "Section_B2", "Section_C", "Section_D", "Section_E1", "Section_E2"
-        ]:
-            records = all_data.get(section_key, [])
-            if not records:
-                print(f"⚠️ Skipping {section_key} — no records")
-                continue
-            cleaned = [normalize_keys({k: (None if pd.isna(v) else v) for k, v in r.items()}) for r in records]
-            update_payload[section_key.lower()] = cleaned
-
-        existing = supabase.table("car_reports").select("car_id").eq("car_id", car_id).execute()
-        if not existing.data:
-            supabase.table("car_reports").insert({"car_id": car_id}).execute()
-
-        supabase.table("car_reports").update(update_payload).eq("car_id", car_id).execute()
-
-        # 🔁 Push clause-mapped analytics
-        try:
-            section_c_records = all_data.get("Section_C", [])
-            section_a = all_data.get("Section_A", [{}])[0]
-            enriched_records = []
-            for record in section_c_records:
-                enriched_records.append({
-                    "car_id": car_id,
-                    "car_no": record.get("CAR NO."),
-                    "client": section_a.get("CLIENT"),
-                    "location": section_a.get("LOCATION"),
-                    "id_no_sec_c": record.get("ID NO. SEC C"),
-                    "causal_factor": record.get("CAUSAL FACTOR"),
-                    "why": record.get("WHY"),
-                    "answer": record.get("ANSWER"),
-                    "clause_mapped": record.get("clause_mapped"),
-                    "cosine_similarity_%": record.get("cosine_similarity_%"),
-                    "euclidean_distance_%": record.get("euclidean_distance_%")
-                })
-
-            if enriched_records:
-                supabase.table("clause_mapped_table").insert(enriched_records).execute()
-                print(f"📤 Inserted {len(enriched_records)} clause mappings")
-        except Exception as insert_err:
-            print(f"⚠️ Insert error in clause_mapped_table: {insert_err}")
-
-        return jsonify({"status": "✅ Final processing complete!", "result": result})
-
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
-
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
