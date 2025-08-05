@@ -83,7 +83,7 @@ def extract_findings(pdf, id_sec_a):
                     extracted_from_table = True
 
     # Fallback if table parsing fails
-if not extracted_from_table and not findings:
+    if not extracted_from_table and not findings:
         for page in pdf.pages:
             text = page.extract_text() or ""
             if "Chronology of Findings" in text and "Cost Impacted" in text:
