@@ -14,6 +14,8 @@ from supabase import create_client
 from sentence_transformers import SentenceTransformer, util
 from collections import Counter
 from rapidfuzz import fuzz
+import zipfile
+import io
 
 
 
