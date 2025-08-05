@@ -328,6 +328,7 @@ def analyze():
                 continue
 
             filename = secure_filename(file.filename)
+
             if filename.endswith(".zip"):
                 zip_bytes = io.BytesIO(file.read())
                 with zipfile.ZipFile(zip_bytes) as zip_file:
@@ -340,7 +341,7 @@ def analyze():
                         with open(pdf_path, "wb") as f:
                             f.write(pdf_bytes)
 
-                        temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.path.splitext(pdf_name)[0]}"
                         output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(pdf_path, temp_id)
                         car_id = df_a["CAR NO."].iloc[0] if "CAR NO." in df_a.columns else temp_id
 
@@ -356,7 +357,7 @@ def analyze():
             else:
                 filepath = os.path.join(UPLOAD_FOLDER, filename)
                 file.save(filepath)
-                temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.path.splitext(filename)[0]}"
                 output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(filepath, temp_id)
                 car_id = df_a["CAR NO."].iloc[0] if "CAR NO." in df_a.columns else temp_id
 
