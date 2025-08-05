@@ -16,6 +16,7 @@ from collections import Counter
 from rapidfuzz import fuzz
 import zipfile
 import io
+from pdfminer.pdfparser import PDFSyntaxError
 
 
 
