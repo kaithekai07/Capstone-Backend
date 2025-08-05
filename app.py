@@ -16,7 +16,7 @@ from collections import Counter
 from rapidfuzz import fuzz
 import zipfile
 import io
-from pdfplumber.utils import PdfminerException
+
 
 
 app = Flask(__name__)
