@@ -245,7 +245,7 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
             "Section_E2": df_e2.to_dict(orient="records")
         }, df_a, df_b2
 
-    except PdfminerException as e:
+    except (PDFSyntaxError, Exception) as e:
         print(f"⚠️ Skipping invalid PDF: {pdf_path} ({str(e)})")
         return None, None, None, None
 
