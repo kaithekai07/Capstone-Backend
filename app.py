@@ -81,26 +81,6 @@ def extract_findings(pdf, id_sec_a):
                         })
                         b_index += 1
                     extracted_from_table = True
-
-    # Fallback if table parsing fails
-    if not extracted_from_table and not findings:
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            if "Chronology of Findings" in text and "Cost Impacted" in text:
-                match = re.search(r"Chronology of Findings(.*?)Cost Impacted", text, re.DOTALL | re.IGNORECASE)
-                if match:
-                    block = match.group(1).strip()
-                    date_match = re.search(r"\d{1,2}[./-]\d{1,2}[./-]\d{2,4}", block)
-                    date = date_match.group(0) if date_match else ""
-                    findings.append({
-                        "ID NO. SEC A": id_sec_a,
-                        "ID NO. SEC B": "1",
-                        "DATE": date,
-                        "TIME": "",
-                        "DETAILS": " ".join(block.splitlines()).strip()
-                    })
-                break
-
     return pd.DataFrame(findings)
 
 
