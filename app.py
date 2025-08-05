@@ -389,7 +389,7 @@ def submit_car():
         result = clause_mapping(car_id, all_data)
 
         update_payload = {"submitted": True}
-        for section_key in ["Section_A", "Section_B1", "Section_B2", "Section_C", "Section_D", "Section_E1", "Section_E2"]:
+        for section_key in ["section_a", "section_b1", "section_b2", "section_c", "section_d", "section_e1", "section_e2"]:
             records = all_data.get(section_key, [])
             if not records:
                 print(f"⚠️ Skipping {section_key} — no records")
