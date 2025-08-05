@@ -212,7 +212,6 @@ def extract_conclusion_review(id_sec_a):
     }])
 
 def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
-    output_path = os.path.join(OUTPUT_FOLDER, f"{id_sec_a}_result.xlsx")
     with pdfplumber.open(pdf_path) as pdf:
         tables = pdf.pages[0].extract_tables()
         df_a = extract_section_a(tables, id_sec_a)
@@ -223,6 +222,7 @@ def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
         df_e1 = extract_corrective_action(pdf, id_sec_a)
         df_e2 = extract_conclusion_review(id_sec_a)
 
+    output_path = os.path.join(OUTPUT_FOLDER, f"{id_sec_a}_result.xlsx")
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df_a.to_excel(writer, sheet_name="Section A", index=False)
         df_b1.to_excel(writer, sheet_name="Section B1 Chronology", index=False)
@@ -325,31 +325,50 @@ def analyze():
 
         for file in files:
             if file.filename == '':
-                continue  # skip empty filenames
+                continue
 
             filename = secure_filename(file.filename)
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
-            file.save(filepath)
+            if filename.endswith(".zip"):
+                zip_bytes = io.BytesIO(file.read())
+                with zipfile.ZipFile(zip_bytes) as zip_file:
+                    for pdf_name in zip_file.namelist():
+                        if not pdf_name.lower().endswith(".pdf"):
+                            continue
+                        pdf_bytes = zip_file.read(pdf_name)
+                        temp_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secure_filename(pdf_name)}"
+                        pdf_path = os.path.join(UPLOAD_FOLDER, temp_filename)
+                        with open(pdf_path, "wb") as f:
+                            f.write(pdf_bytes)
 
-            # Use temporary ID first, replaced after extraction
-            temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(filepath, temp_id)
+                        temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(pdf_path, temp_id)
+                        car_id = df_a["CAR NO."].iloc[0] if "CAR NO." in df_a.columns else temp_id
 
-            # Extract actual CAR NO. from df_a
-            if "CAR NO." in df_a.columns:
-                car_id = df_a["CAR NO."].iloc[0]
+                        json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
+                        with open(json_path, "w") as f:
+                            json.dump(extracted_data, f)
+
+                        results.append({
+                            "car_id": car_id,
+                            "filename": pdf_name,
+                            "data": extracted_data
+                        })
             else:
-                car_id = temp_id
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                file.save(filepath)
+                temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(filepath, temp_id)
+                car_id = df_a["CAR NO."].iloc[0] if "CAR NO." in df_a.columns else temp_id
 
-            json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
-            with open(json_path, "w") as f:
-                json.dump(extracted_data, f)
+                json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
+                with open(json_path, "w") as f:
+                    json.dump(extracted_data, f)
 
-            results.append({
-                "car_id": car_id,
-                "filename": filename,
-                "data": extracted_data
-            })
+                results.append({
+                    "car_id": car_id,
+                    "filename": filename,
+                    "data": extracted_data
+                })
 
         return jsonify({"status": "success", "results": results})
 
