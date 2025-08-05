@@ -340,30 +340,39 @@ def analyze():
             if filename.endswith(".zip"):
                 zip_bytes = io.BytesIO(file.read())
                 with zipfile.ZipFile(zip_bytes) as zip_file:
-                    for pdf_name in zip_file.namelist():
-                        if not pdf_name.lower().endswith(".pdf"):
+                    for info in zip_file.infolist():
+                        pdf_name = info.filename
+                        if info.is_dir() or not pdf_name.lower().endswith(".pdf"):
                             continue
-                        pdf_bytes = zip_file.read(pdf_name)
-                        temp_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secure_filename(pdf_name)}"
-                        pdf_path = os.path.join(UPLOAD_FOLDER, temp_filename)
-                        with open(pdf_path, "wb") as f:
-                            f.write(pdf_bytes)
 
-                        temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.path.splitext(pdf_name)[0]}"
-                        output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(pdf_path, temp_id)
-                        if not extracted_data or not df_a:
-                            continue
-                        car_id = df_a["CAR NO."].iloc[0] if "CAR NO." in df_a.columns else temp_id
+                        try:
+                            pdf_bytes = zip_file.read(pdf_name)
+                            temp_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secure_filename(os.path.basename(pdf_name))}"
+                            pdf_path = os.path.join(UPLOAD_FOLDER, temp_filename)
 
-                        json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
-                        with open(json_path, "w") as f:
-                            json.dump(extracted_data, f)
+                            with open(pdf_path, "wb") as f:
+                                f.write(pdf_bytes)
 
-                        results.append({
-                            "car_id": car_id,
-                            "filename": pdf_name,
-                            "data": extracted_data
-                        })
+                            temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.path.splitext(pdf_name)[0]}"
+                            output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(pdf_path, temp_id)
+
+                            if not extracted_data or not df_a:
+                                continue
+
+                            car_id = df_a["CAR NO."].iloc[0] if "CAR NO." in df_a.columns else temp_id
+
+                            json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
+                            with open(json_path, "w") as f:
+                                json.dump(extracted_data, f)
+
+                            results.append({
+                                "car_id": car_id,
+                                "filename": pdf_name,
+                                "data": extracted_data
+                            })
+
+                        except Exception as zip_err:
+                            print(f"❌ Skipping {pdf_name} due to error: {zip_err}")
             else:
                 filepath = os.path.join(UPLOAD_FOLDER, filename)
                 file.save(filepath)
@@ -388,6 +397,7 @@ def analyze():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/submit-car", methods=["POST"])
 def submit_car():
