@@ -16,7 +16,7 @@ from collections import Counter
 from rapidfuzz import fuzz
 import zipfile
 import io
-
+from pdfplumber.utils import PdfminerException
 
 
 app = Flask(__name__)
@@ -214,35 +214,40 @@ def extract_conclusion_review(id_sec_a):
     }])
 
 def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
-    with pdfplumber.open(pdf_path) as pdf:
-        tables = pdf.pages[0].extract_tables()
-        df_a = extract_section_a(tables, id_sec_a)
-        df_b1 = extract_findings(pdf, id_sec_a)
-        df_b2 = extract_cost_impact(pdf, id_sec_a)
-        df_c = extract_answers_after_point(extract_section_c_text(pdf), id_sec_a, df_a["CAR NO."].iloc[0])
-        df_d = extract_corrections(pdf, id_sec_a)
-        df_e1 = extract_corrective_action(pdf, id_sec_a)
-        df_e2 = extract_conclusion_review(id_sec_a)
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            tables = pdf.pages[0].extract_tables()
+            df_a = extract_section_a(tables, id_sec_a)
+            df_b1 = extract_findings(pdf, id_sec_a)
+            df_b2 = extract_cost_impact(pdf, id_sec_a)
+            df_c = extract_answers_after_point(extract_section_c_text(pdf), id_sec_a, df_a["CAR NO."].iloc[0])
+            df_d = extract_corrections(pdf, id_sec_a)
+            df_e1 = extract_corrective_action(pdf, id_sec_a)
+            df_e2 = extract_conclusion_review(id_sec_a)
 
-    output_path = os.path.join(OUTPUT_FOLDER, f"{id_sec_a}_result.xlsx")
-    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        df_a.to_excel(writer, sheet_name="Section A", index=False)
-        df_b1.to_excel(writer, sheet_name="Section B1 Chronology", index=False)
-        df_b2.to_excel(writer, sheet_name="Section B2 Cost Impacted", index=False)
-        df_c.to_excel(writer, sheet_name="Section C 5Why QA", index=False)
-        df_d.to_excel(writer, sheet_name="Section D Corrective Taken", index=False)
-        df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
-        df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
+        output_path = os.path.join(OUTPUT_FOLDER, f"{id_sec_a}_result.xlsx")
+        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+            df_a.to_excel(writer, sheet_name="Section A", index=False)
+            df_b1.to_excel(writer, sheet_name="Section B1 Chronology", index=False)
+            df_b2.to_excel(writer, sheet_name="Section B2 Cost Impacted", index=False)
+            df_c.to_excel(writer, sheet_name="Section C 5Why QA", index=False)
+            df_d.to_excel(writer, sheet_name="Section D Corrective Taken", index=False)
+            df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
+            df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
 
-    return output_path, {
-        "Section_A": df_a.to_dict(orient="records"),
-        "Section_B1": df_b1.to_dict(orient="records"),
-        "Section_B2": df_b2.to_dict(orient="records"),
-        "Section_C": df_c.to_dict(orient="records"),
-        "Section_D": df_d.to_dict(orient="records"),
-        "Section_E1": df_e1.to_dict(orient="records"),
-        "Section_E2": df_e2.to_dict(orient="records")
-    }, df_a, df_b2
+        return output_path, {
+            "Section_A": df_a.to_dict(orient="records"),
+            "Section_B1": df_b1.to_dict(orient="records"),
+            "Section_B2": df_b2.to_dict(orient="records"),
+            "Section_C": df_c.to_dict(orient="records"),
+            "Section_D": df_d.to_dict(orient="records"),
+            "Section_E1": df_e1.to_dict(orient="records"),
+            "Section_E2": df_e2.to_dict(orient="records")
+        }, df_a, df_b2
+
+    except PdfminerException as e:
+        print(f"⚠️ Skipping invalid PDF: {pdf_path} ({str(e)})")
+        return None, None, None, None
 
 
 def normalize_keys(record):
@@ -345,6 +350,8 @@ def analyze():
 
                         temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.path.splitext(pdf_name)[0]}"
                         output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(pdf_path, temp_id)
+                        if not extracted_data or not df_a:
+                            continue
                         car_id = df_a["CAR NO."].iloc[0] if "CAR NO." in df_a.columns else temp_id
 
                         json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
@@ -361,6 +368,8 @@ def analyze():
                 file.save(filepath)
                 temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.path.splitext(filename)[0]}"
                 output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(filepath, temp_id)
+                if not extracted_data or not df_a:
+                    continue
                 car_id = df_a["CAR NO."].iloc[0] if "CAR NO." in df_a.columns else temp_id
 
                 json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
