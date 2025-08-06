@@ -14,9 +14,6 @@ from supabase import create_client
 from sentence_transformers import SentenceTransformer, util
 from collections import Counter
 from rapidfuzz import fuzz
-import zipfile
-import io
-from pdfminer.pdfparser import PDFSyntaxError
 
 
 
@@ -84,6 +81,26 @@ def extract_findings(pdf, id_sec_a):
                         })
                         b_index += 1
                     extracted_from_table = True
+
+    # Fallback if table parsing fails
+    if not extracted_from_table and not findings:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+            if "Chronology of Findings" in text and "Cost Impacted" in text:
+                match = re.search(r"Chronology of Findings(.*?)Cost Impacted", text, re.DOTALL | re.IGNORECASE)
+                if match:
+                    block = match.group(1).strip()
+                    date_match = re.search(r"\d{1,2}[./-]\d{1,2}[./-]\d{2,4}", block)
+                    date = date_match.group(0) if date_match else ""
+                    findings.append({
+                        "ID NO. SEC A": id_sec_a,
+                        "ID NO. SEC B": "1",
+                        "DATE": date,
+                        "TIME": "",
+                        "DETAILS": " ".join(block.splitlines()).strip()
+                    })
+                break
+
     return pd.DataFrame(findings)
 
 
@@ -215,40 +232,35 @@ def extract_conclusion_review(id_sec_a):
     }])
 
 def process_pdf_with_pdfplumber(pdf_path, id_sec_a):
-    try:
-        with pdfplumber.open(pdf_path) as pdf:
-            tables = pdf.pages[0].extract_tables()
-            df_a = extract_section_a(tables, id_sec_a)
-            df_b1 = extract_findings(pdf, id_sec_a)
-            df_b2 = extract_cost_impact(pdf, id_sec_a)
-            df_c = extract_answers_after_point(extract_section_c_text(pdf), id_sec_a, df_a["CAR NO."].iloc[0])
-            df_d = extract_corrections(pdf, id_sec_a)
-            df_e1 = extract_corrective_action(pdf, id_sec_a)
-            df_e2 = extract_conclusion_review(id_sec_a)
+    output_path = os.path.join(OUTPUT_FOLDER, f"{id_sec_a}_result.xlsx")
+    with pdfplumber.open(pdf_path) as pdf:
+        tables = pdf.pages[0].extract_tables()
+        df_a = extract_section_a(tables, id_sec_a)
+        df_b1 = extract_findings(pdf, id_sec_a)
+        df_b2 = extract_cost_impact(pdf, id_sec_a)
+        df_c = extract_answers_after_point(extract_section_c_text(pdf), id_sec_a, df_a["CAR NO."].iloc[0])
+        df_d = extract_corrections(pdf, id_sec_a)
+        df_e1 = extract_corrective_action(pdf, id_sec_a)
+        df_e2 = extract_conclusion_review(id_sec_a)
 
-        output_path = os.path.join(OUTPUT_FOLDER, f"{id_sec_a}_result.xlsx")
-        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-            df_a.to_excel(writer, sheet_name="Section A", index=False)
-            df_b1.to_excel(writer, sheet_name="Section B1 Chronology", index=False)
-            df_b2.to_excel(writer, sheet_name="Section B2 Cost Impacted", index=False)
-            df_c.to_excel(writer, sheet_name="Section C 5Why QA", index=False)
-            df_d.to_excel(writer, sheet_name="Section D Corrective Taken", index=False)
-            df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
-            df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        df_a.to_excel(writer, sheet_name="Section A", index=False)
+        df_b1.to_excel(writer, sheet_name="Section B1 Chronology", index=False)
+        df_b2.to_excel(writer, sheet_name="Section B2 Cost Impacted", index=False)
+        df_c.to_excel(writer, sheet_name="Section C 5Why QA", index=False)
+        df_d.to_excel(writer, sheet_name="Section D Corrective Taken", index=False)
+        df_e1.to_excel(writer, sheet_name="Section E1 Corrective Action", index=False)
+        df_e2.to_excel(writer, sheet_name="Section E2 Conclusion", index=False)
 
-        return output_path, {
-            "Section_A": df_a.to_dict(orient="records"),
-            "Section_B1": df_b1.to_dict(orient="records"),
-            "Section_B2": df_b2.to_dict(orient="records"),
-            "Section_C": df_c.to_dict(orient="records"),
-            "Section_D": df_d.to_dict(orient="records"),
-            "Section_E1": df_e1.to_dict(orient="records"),
-            "Section_E2": df_e2.to_dict(orient="records")
-        }, df_a, df_b2
-
-    except (PDFSyntaxError, Exception) as e:
-        print(f"⚠️ Skipping invalid PDF: {pdf_path} ({str(e)})")
-        return None, None, None, None
+    return output_path, {
+        "Section_A": df_a.to_dict(orient="records"),
+        "Section_B1": df_b1.to_dict(orient="records"),
+        "Section_B2": df_b2.to_dict(orient="records"),
+        "Section_C": df_c.to_dict(orient="records"),
+        "Section_D": df_d.to_dict(orient="records"),
+        "Section_E1": df_e1.to_dict(orient="records"),
+        "Section_E2": df_e2.to_dict(orient="records")
+    }, df_a, df_b2
 
 
 def normalize_keys(record):
@@ -333,71 +345,37 @@ def analyze():
 
         for file in files:
             if file.filename == '':
-                continue
+                continue  # skip empty filenames
 
             filename = secure_filename(file.filename)
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(filepath)
 
-            if filename.endswith(".zip"):
-                zip_bytes = io.BytesIO(file.read())
-                with zipfile.ZipFile(zip_bytes) as zip_file:
-                    for info in zip_file.infolist():
-                        pdf_name = info.filename
-                        if info.is_dir() or not pdf_name.lower().endswith(".pdf"):
-                            continue
+            # Use temporary ID first, replaced after extraction
+            temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(filepath, temp_id)
 
-                        try:
-                            pdf_bytes = zip_file.read(pdf_name)
-                            temp_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secure_filename(os.path.basename(pdf_name))}"
-                            pdf_path = os.path.join(UPLOAD_FOLDER, temp_filename)
-
-                            with open(pdf_path, "wb") as f:
-                                f.write(pdf_bytes)
-
-                            temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.path.splitext(pdf_name)[0]}"
-                            output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(pdf_path, temp_id)
-
-                            if not extracted_data or not df_a:
-                                continue
-
-                            car_id = df_a["CAR NO."].iloc[0] if "CAR NO." in df_a.columns else temp_id
-
-                            json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
-                            with open(json_path, "w") as f:
-                                json.dump(extracted_data, f)
-
-                            results.append({
-                                "car_id": car_id,
-                                "filename": pdf_name,
-                                "data": extracted_data
-                            })
-
-                        except Exception as zip_err:
-                            print(f"❌ Skipping {pdf_name} due to error: {zip_err}")
+            # Extract actual CAR NO. from df_a
+            if "CAR NO." in df_a.columns:
+                car_id = df_a["CAR NO."].iloc[0]
             else:
-                filepath = os.path.join(UPLOAD_FOLDER, filename)
-                file.save(filepath)
-                temp_id = f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.path.splitext(filename)[0]}"
-                output_path, extracted_data, df_a, df_b2 = process_pdf_with_pdfplumber(filepath, temp_id)
-                if not extracted_data or not df_a:
-                    continue
-                car_id = df_a["CAR NO."].iloc[0] if "CAR NO." in df_a.columns else temp_id
+                car_id = temp_id
 
-                json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
-                with open(json_path, "w") as f:
-                    json.dump(extracted_data, f)
+            json_path = os.path.join(OUTPUT_FOLDER, f"{car_id}_result.json")
+            with open(json_path, "w") as f:
+                json.dump(extracted_data, f)
 
-                results.append({
-                    "car_id": car_id,
-                    "filename": filename,
-                    "data": extracted_data
-                })
+            results.append({
+                "car_id": car_id,
+                "filename": filename,
+                "data": extracted_data
+            })
 
         return jsonify({"status": "success", "results": results})
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
 
 @app.route("/submit-car", methods=["POST"])
 def submit_car():
@@ -411,7 +389,7 @@ def submit_car():
         result = clause_mapping(car_id, all_data)
 
         update_payload = {"submitted": True}
-        for section_key in ["section_a", "section_b1", "section_b2", "section_c", "section_d", "section_e1", "section_e2"]:
+        for section_key in ["Section_A", "Section_B1", "Section_B2", "Section_C", "Section_D", "Section_E1", "Section_E2"]:
             records = all_data.get(section_key, [])
             if not records:
                 print(f"⚠️ Skipping {section_key} — no records")
@@ -475,4 +453,3 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-it doesnt accept normal pdf uploads now
